@@ -20,20 +20,6 @@ if (fs.existsSync(envPath)) {
   });
 }
 
-// Check internet connectivity to avoid hanging
-async function isOnline() {
-  try {
-    const hostname = url.replace('libsql://', '').replace('https://', '').split('/')[0].split(':')[0];
-    await Promise.race([
-      dns.lookup(hostname),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 3000))
-    ]);
-    return true;
-  } catch (err) {
-    return false;
-  }
-}
-
 const baseDir = path.resolve(__dirname, '..', 'system_data');
 const localDbPath = path.resolve(__dirname, '..', 'local.db');
 
@@ -72,14 +58,6 @@ async function upsertTableFromLocal(localClient, cloudClient, tableName) {
 }
 
 async function syncToCloud() {
-  console.log("🌐 جارٍ التحقق من اتصال الإنترنت بالسحابة...");
-  const online = await isOnline();
-  if (!online) {
-    console.error("❌ تعذر الاتصال بالسحابة: الجهاز غير متصل بالإنترنت حالياً (Offline).");
-    console.error("💡 يرجى التأكد من تشغيل شبكة الإنترنت / الواي فاي على الجهاز ثم المحاولة مجدداً.");
-    process.exit(1);
-  }
-
   console.log("Connecting to Turso Cloud for Push:", url);
   const cloudClient = createClient({ url, authToken });
 
