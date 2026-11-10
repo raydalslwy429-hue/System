@@ -39,16 +39,6 @@ export default function DataSyncHubModal({ isOpen, onClose }: DataSyncHubModalPr
     setLoadingAction(actionType);
     setFeedback(null);
 
-    // Immediate offline check for cloud/github actions
-    if ((actionType === "push" || actionType === "pull" || actionType === "github" || actionType === "github_pull") && typeof window !== "undefined" && !navigator.onLine) {
-      setFeedback({
-        type: "error",
-        message: "⚠️ جهاز الكمبيوتر غير متصل بالإنترنت حالياً (Offline). يرجى توصيل الإنترنت (الواي فاي أو الكيبل) ثم الضغط على الزر مجدداً."
-      });
-      setLoadingAction(null);
-      return;
-    }
-
     try {
       let res: { success: boolean; message?: string; error?: string };
       if (actionType === "push") {
@@ -169,9 +159,9 @@ export default function DataSyncHubModal({ isOpen, onClose }: DataSyncHubModalPr
                 <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center mb-3">
                   <GitBranch className="w-5 h-5" />
                 </div>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex flex-wrap items-center justify-between gap-1 mb-1.5">
                   <h4 className="text-sm font-black text-white">تحديث الكود والشاشات (GitHub)</h4>
-                  <span className="text-[10px] font-mono bg-purple-950/80 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-lg">raydalslwy429-hue/System</span>
+                  <span className="text-[9px] font-mono whitespace-nowrap bg-purple-950/80 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-lg shrink-0" dir="ltr">raydalslwy429-hue/System</span>
                 </div>
                 <p className="text-[11px] text-slate-300 leading-relaxed mb-4">
                   رفع أحدث أكواد البرمجة، الشاشات، التصاميم، والميزات الجديدة إلى مستودعك الخاص في GitHub.
