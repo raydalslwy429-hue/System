@@ -48,6 +48,7 @@ import {
   UserCheck,
   RotateCw,
   Loader2,
+  GitBranch,
 } from "lucide-react";
 import {
   assignCaseAction,
@@ -988,6 +989,16 @@ export default function AdminManager({
                 >
                   <Cloud className="w-4 h-4 text-[#FFC217]" />
                   <span>مركز المزامنة السحابية ☁️</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowDataSyncModal(true)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer bg-gradient-to-r from-purple-700 to-indigo-800 hover:from-purple-800 hover:to-indigo-900 text-white shadow-xs"
+                  title="تحديث ورفع كود البرمجة والشاشات إلى مستودع GitHub"
+                >
+                  <GitBranch className="w-4 h-4 text-purple-200" />
+                  <span>تحديث الكود (GitHub) 🐙</span>
                 </button>
 
                 {isSuperAdmin && (

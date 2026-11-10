@@ -13,12 +13,14 @@ import {
   X,
   ShieldCheck,
   FileCode,
-  HardDrive
+  HardDrive,
+  GitBranch
 } from "lucide-react";
 import {
   pushSystemDataAction,
   pullSystemDataAction,
-  syncLocalDbAction
+  syncLocalDbAction,
+  pushCodeToGithubAction
 } from "@/app/actions/capa";
 
 interface DataSyncHubModalProps {
@@ -32,15 +34,15 @@ export default function DataSyncHubModal({ isOpen, onClose }: DataSyncHubModalPr
 
   if (!isOpen) return null;
 
-  const handleAction = async (actionType: "push" | "pull" | "local", title: string) => {
+  const handleAction = async (actionType: "push" | "pull" | "local" | "github", title: string) => {
     setLoadingAction(actionType);
     setFeedback(null);
 
-    // Immediate offline check for cloud actions
-    if ((actionType === "push" || actionType === "pull") && typeof window !== "undefined" && !navigator.onLine) {
+    // Immediate offline check for cloud/github actions
+    if ((actionType === "push" || actionType === "pull" || actionType === "github") && typeof window !== "undefined" && !navigator.onLine) {
       setFeedback({
         type: "error",
-        message: "⚠️ جهاز الكمبيوتر غير متصل بالإنترنت حالياً (Offline). لمزامنة البيانات مع السحابة، يرجى توصيل الإنترنت (الواي فاي أو الكيبل) ثم الضغط على الزر مجدداً."
+        message: "⚠️ جهاز الكمبيوتر غير متصل بالإنترنت حالياً (Offline). يرجى توصيل الإنترنت (الواي فاي أو الكيبل) ثم الضغط على الزر مجدداً."
       });
       setLoadingAction(null);
       return;
@@ -52,6 +54,8 @@ export default function DataSyncHubModal({ isOpen, onClose }: DataSyncHubModalPr
         res = await pushSystemDataAction();
       } else if (actionType === "pull") {
         res = await pullSystemDataAction();
+      } else if (actionType === "github") {
+        res = await pushCodeToGithubAction();
       } else {
         res = await syncLocalDbAction();
       }
@@ -65,7 +69,7 @@ export default function DataSyncHubModal({ isOpen, onClose }: DataSyncHubModalPr
       setFeedback({ 
         type: "error", 
         message: err.message?.includes("fetch") 
-          ? "⚠️ تعذر الاتصال بالسحابة: يرجى التأكد من اتصال الإنترنت ثم إعادة المحاولة." 
+          ? "⚠️ تعذر الاتصال بالإنترنت أو الخادم. يرجى التأكد من اتصال الإنترنت ثم إعادة المحاولة." 
           : (err.message || "حدث خطأ غير متوقع") 
       });
     } finally {
@@ -129,7 +133,7 @@ export default function DataSyncHubModal({ isOpen, onClose }: DataSyncHubModalPr
         <div className="flex-1 overflow-y-auto space-y-6 pr-1 relative z-10">
           
           {/* Action Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             
             {/* 1. Push to Cloud */}
             <div className="bg-[#261A16] border border-[#D49A3D]/30 p-5 rounded-2xl flex flex-col justify-between hover:border-[#D49A3D] transition-all">
@@ -156,7 +160,35 @@ export default function DataSyncHubModal({ isOpen, onClose }: DataSyncHubModalPr
               </button>
             </div>
 
-            {/* 2. Pull from Cloud */}
+            {/* 2. Push Code to GitHub */}
+            <div className="bg-[#261A16] border border-purple-500/40 p-5 rounded-2xl flex flex-col justify-between hover:border-purple-400 transition-all">
+              <div>
+                <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center mb-3">
+                  <GitBranch className="w-5 h-5" />
+                </div>
+                <div className="flex items-center justify-between mb-1">
+                  <h4 className="text-sm font-black text-white">تحديث الكود والشاشات (GitHub)</h4>
+                  <span className="text-[10px] font-mono bg-purple-950/80 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-lg">raydalslwy429-hue/System</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed mb-4">
+                  رفع أحدث أكواد البرمجة، الشاشات، التصاميم، والميزات الجديدة إلى مستودعك الخاص في GitHub.
+                </p>
+              </div>
+              <button
+                disabled={loadingAction !== null}
+                onClick={() => handleAction("github", "رفع وتحديث الكود إلى GitHub")}
+                className="w-full py-2.5 px-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:brightness-110 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-md disabled:opacity-50"
+              >
+                {loadingAction === "github" ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <GitBranch className="w-4 h-4" />
+                )}
+                <span>رفع التحديثات البرمجية لـ GitHub 🐙</span>
+              </button>
+            </div>
+
+            {/* 3. Pull from Cloud */}
             <div className="bg-[#261A16] border border-blue-500/30 p-5 rounded-2xl flex flex-col justify-between hover:border-blue-400 transition-all">
               <div>
                 <div className="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center mb-3">
@@ -181,7 +213,7 @@ export default function DataSyncHubModal({ isOpen, onClose }: DataSyncHubModalPr
               </button>
             </div>
 
-            {/* 3. Sync to Local SQLite */}
+            {/* 4. Sync to Local SQLite */}
             <div className="bg-[#261A16] border border-emerald-500/30 p-5 rounded-2xl flex flex-col justify-between hover:border-emerald-400 transition-all">
               <div>
                 <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mb-3">

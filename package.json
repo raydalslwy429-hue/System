@@ -9,7 +9,8 @@
     "lint": "next lint",
     "data:pull": "node scripts/export_to_system_data.cjs",
     "data:push": "node scripts/sync_to_cloud.cjs",
-    "data:local": "node scripts/sync_to_local.cjs"
+    "data:local": "node scripts/sync_to_local.cjs",
+    "code:push": "node scripts/push_to_github.cjs"
   },
   "dependencies": {
     "@libsql/client": "^0.14.0",
