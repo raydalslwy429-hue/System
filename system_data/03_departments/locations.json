@@ -1,0 +1,66 @@
+[
+  {
+    "id": 3,
+    "code": "loc_bakery",
+    "name": "معمل الحلويات والايسكريم",
+    "department_code": "aaa",
+    "status": "active",
+    "created_at": "2026-11-07 18:15:55"
+  },
+  {
+    "id": 7,
+    "code": "loc_central_kitchen",
+    "name": "المطبخ المركزي الرئيسي",
+    "department_code": "aaa",
+    "status": "active",
+    "created_at": "2026-11-07 18:15:57"
+  },
+  {
+    "id": 8,
+    "code": "loc_cold_store",
+    "name": "قسم الصيانة",
+    "department_code": "dept_maintenance",
+    "status": "active",
+    "created_at": "2026-11-07 18:15:57"
+  },
+  {
+    "id": 6,
+    "code": "loc_grill",
+    "name": "صالة العائلات",
+    "department_code": "dept_production",
+    "status": "active",
+    "created_at": "2026-11-07 18:15:56"
+  },
+  {
+    "id": 1,
+    "code": "loc_meat",
+    "name": "صالة المراسيم",
+    "department_code": "dept_production",
+    "status": "active",
+    "created_at": "2026-11-07 18:15:54"
+  },
+  {
+    "id": 2,
+    "code": "loc_prep",
+    "name": "معمل (اللحوم -الدجاج-الاسماك)",
+    "department_code": "aaa",
+    "status": "active",
+    "created_at": "2026-11-07 18:15:54"
+  },
+  {
+    "id": 5,
+    "code": "loc_seafood",
+    "name": "صالة كالتكس",
+    "department_code": "dept_production",
+    "status": "active",
+    "created_at": "2026-11-07 18:15:56"
+  },
+  {
+    "id": 4,
+    "code": "loc_veg",
+    "name": "معمل الخضار والفواكه",
+    "department_code": "aaa",
+    "status": "active",
+    "created_at": "2026-11-07 18:15:55"
+  }
+]

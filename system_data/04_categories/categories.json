@@ -1,0 +1,68 @@
+[
+  {
+    "id": 3,
+    "code": "nc_cross",
+    "name": "مخاطر التلوث الخلطي بين المنتجات",
+    "severity": "high",
+    "created_at": "2026-11-07 18:16:00",
+    "department_code": "all",
+    "section_code": "all",
+    "status": "active",
+    "description": null
+  },
+  {
+    "id": 1,
+    "code": "nc_hygiene",
+    "name": "نظافة وتعقيم غير مطابقة",
+    "severity": "high",
+    "created_at": "2026-11-07 18:15:59",
+    "department_code": "all",
+    "section_code": "all",
+    "status": "active",
+    "description": null
+  },
+  {
+    "id": 5,
+    "code": "nc_label",
+    "name": "غياب أو انتهاء بطاقات التتبع وتواريخ الصلاحية",
+    "severity": "medium",
+    "created_at": "2026-11-07 18:16:01",
+    "department_code": "all",
+    "section_code": "all",
+    "status": "active",
+    "description": null
+  },
+  {
+    "id": 4,
+    "code": "nc_pest",
+    "name": "مكافحة آفات ووقاية صحية",
+    "severity": "medium",
+    "created_at": "2026-11-07 18:16:00",
+    "department_code": "all",
+    "section_code": "all",
+    "status": "active",
+    "description": null
+  },
+  {
+    "id": 6,
+    "code": "nc_ppe",
+    "name": "نظافة",
+    "severity": "low",
+    "created_at": "2026-11-07 18:16:01",
+    "department_code": "aaa",
+    "section_code": "all",
+    "status": "active",
+    "description": "تتمثل في  (النظافة  الشخصية -نظافة مكان العمل-نظافةالمعدات)"
+  },
+  {
+    "id": 2,
+    "code": "nc_temp",
+    "name": "اختلال في درجات حرارة التبريد أو الحفظ",
+    "severity": "high",
+    "created_at": "2026-11-07 18:15:59",
+    "department_code": "all",
+    "section_code": "all",
+    "status": "active",
+    "description": null
+  }
+]
