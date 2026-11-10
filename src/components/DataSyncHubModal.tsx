@@ -20,7 +20,8 @@ import {
   pushSystemDataAction,
   pullSystemDataAction,
   syncLocalDbAction,
-  pushCodeToGithubAction
+  pushCodeToGithubAction,
+  pullCodeFromGithubAction
 } from "@/app/actions/capa";
 
 interface DataSyncHubModalProps {
@@ -34,12 +35,12 @@ export default function DataSyncHubModal({ isOpen, onClose }: DataSyncHubModalPr
 
   if (!isOpen) return null;
 
-  const handleAction = async (actionType: "push" | "pull" | "local" | "github", title: string) => {
+  const handleAction = async (actionType: "push" | "pull" | "local" | "github" | "github_pull", title: string) => {
     setLoadingAction(actionType);
     setFeedback(null);
 
     // Immediate offline check for cloud/github actions
-    if ((actionType === "push" || actionType === "pull" || actionType === "github") && typeof window !== "undefined" && !navigator.onLine) {
+    if ((actionType === "push" || actionType === "pull" || actionType === "github" || actionType === "github_pull") && typeof window !== "undefined" && !navigator.onLine) {
       setFeedback({
         type: "error",
         message: "⚠️ جهاز الكمبيوتر غير متصل بالإنترنت حالياً (Offline). يرجى توصيل الإنترنت (الواي فاي أو الكيبل) ثم الضغط على الزر مجدداً."
@@ -56,6 +57,8 @@ export default function DataSyncHubModal({ isOpen, onClose }: DataSyncHubModalPr
         res = await pullSystemDataAction();
       } else if (actionType === "github") {
         res = await pushCodeToGithubAction();
+      } else if (actionType === "github_pull") {
+        res = await pullCodeFromGithubAction();
       } else {
         res = await syncLocalDbAction();
       }
@@ -174,18 +177,33 @@ export default function DataSyncHubModal({ isOpen, onClose }: DataSyncHubModalPr
                   رفع أحدث أكواد البرمجة، الشاشات، التصاميم، والميزات الجديدة إلى مستودعك الخاص في GitHub.
                 </p>
               </div>
-              <button
-                disabled={loadingAction !== null}
-                onClick={() => handleAction("github", "رفع وتحديث الكود إلى GitHub")}
-                className="w-full py-2.5 px-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:brightness-110 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-md disabled:opacity-50"
-              >
-                {loadingAction === "github" ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                ) : (
-                  <GitBranch className="w-4 h-4" />
-                )}
-                <span>رفع التحديثات البرمجية لـ GitHub 🐙</span>
-              </button>
+              <div className="flex flex-col gap-2 mt-auto">
+                <button
+                  disabled={loadingAction !== null}
+                  onClick={() => handleAction("github", "رفع وتحديث الكود إلى GitHub")}
+                  className="w-full py-2.5 px-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:brightness-110 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-md disabled:opacity-50"
+                >
+                  {loadingAction === "github" ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <GitBranch className="w-4 h-4" />
+                  )}
+                  <span>رفع التحديثات لـ GitHub (Push) 🐙</span>
+                </button>
+
+                <button
+                  disabled={loadingAction !== null}
+                  onClick={() => handleAction("github_pull", "سحب وتحديث الكود من GitHub")}
+                  className="w-full py-2 px-3 bg-white/10 hover:bg-white/20 text-purple-200 border border-purple-500/30 font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs disabled:opacity-50"
+                >
+                  {loadingAction === "github_pull" ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <CloudDownload className="w-4 h-4 text-purple-300" />
+                  )}
+                  <span>سحب أحدث كود (Pull) 📥</span>
+                </button>
+              </div>
             </div>
 
             {/* 3. Pull from Cloud */}
@@ -194,9 +212,9 @@ export default function DataSyncHubModal({ isOpen, onClose }: DataSyncHubModalPr
                 <div className="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center mb-3">
                   <CloudDownload className="w-5 h-5" />
                 </div>
-                <h4 className="text-sm font-black text-white mb-1">سحب وتفريغ من السحابة</h4>
+                <h4 className="text-sm font-black text-white mb-1">سحب السحابة إلى الـ Local</h4>
                 <p className="text-[11px] text-slate-300 leading-relaxed mb-4">
-                  جلب أحدث نسخة من سحابة Turso وتفريغها في ملفات ومجلدات <code className="text-blue-300">system_data</code> المحلية.
+                  جلب أحدث نسخة من Turso وتحديث ملفات <code className="text-blue-300">system_data</code> وقاعدة البيانات المحلية (<code className="text-blue-300">local.db</code>) بكافة الحالات والإسنادات.
                 </p>
               </div>
               <button

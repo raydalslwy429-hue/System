@@ -187,6 +187,39 @@ async function exportAll() {
   fs.writeFileSync(path.join(baseDir, 'README.md'), readmeContent, 'utf8');
 
   console.log("✅ Successfully exported all system data into system_data/");
+
+  // 7. Update local.db automatically so it matches the cloud
+  console.log("💾 Updating local.db with cloud tables & cases...");
+  try {
+    const { execSync } = require('child_process');
+    const syncLocalPath = path.resolve(__dirname, 'sync_to_local.cjs');
+    execSync(`node "${syncLocalPath}"`, { stdio: 'inherit' });
+
+    // Sync operational data from cloud to local.db
+    const localDbPath = path.resolve(__dirname, '..', 'local.db');
+    const localClient = createClient({ url: `file:${localDbPath.replace(/\\/g, '/')}` });
+
+    const operationalTables = ['cases_master', 'case_assignments', 'case_executions', 'admin_decisions', 'forms_responses', 'forms_answers', 'audit_logs'];
+    for (const t of operationalTables) {
+      try {
+        const cloudRows = await client.execute(`SELECT * FROM ${t}`);
+        if (cloudRows.rows && cloudRows.rows.length > 0) {
+          const cols = Object.keys(cloudRows.rows[0]);
+          const placeholders = cols.map(() => '?').join(', ');
+          const sql = `INSERT OR REPLACE INTO ${t} (${cols.join(', ')}) VALUES (${placeholders})`;
+          for (const row of cloudRows.rows) {
+            await localClient.execute({ sql, args: cols.map(c => row[c]) });
+          }
+          console.log(`✔ Synced ${cloudRows.rows.length} rows for ${t} into local.db.`);
+        }
+      } catch (tableErr) {
+        console.warn(`Note on table ${t}:`, tableErr.message);
+      }
+    }
+    console.log("🎉 Successfully synchronized local.db with all cloud cases and data!");
+  } catch (localErr) {
+    console.warn("Could not auto-sync local.db:", localErr.message);
+  }
 }
 
 exportAll().catch(err => {

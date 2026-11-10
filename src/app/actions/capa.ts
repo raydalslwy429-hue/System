@@ -1599,3 +1599,27 @@ export async function pushCodeToGithubAction(customMessage?: string) {
     return { success: false, error: errText || "حدث خطأ أثناء الرفع إلى GitHub" };
   }
 }
+
+export async function pullCodeFromGithubAction() {
+  const session = await getSession();
+  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام العليا" };
+  try {
+    const { execSync } = await import("child_process");
+    const path = await import("path");
+    const scriptPath = path.resolve(process.cwd(), "scripts", "pull_from_github.cjs");
+    const output = execSync(`node "${scriptPath}"`, { encoding: "utf8" });
+    return { 
+      success: true, 
+      message: "تم بنجاح سحب وتحديث كود البرمجة والشاشات من مستودع GitHub!" 
+    };
+  } catch (err: any) {
+    const errText = (err.stderr || err.stdout || err.message || "").toString();
+    if (errText.includes("غير متصل بالإنترنت") || errText.includes("Offline") || errText.includes("ENOTFOUND") || errText.includes("TIMEOUT")) {
+      return { 
+        success: false, 
+        error: "⚠️ تعذر الاتصال بـ GitHub: جهاز الكمبيوتر غير متصل بالإنترنت حالياً. يرجى توصيل الإنترنت ثم المحاولة مجدداً." 
+      };
+    }
+    return { success: false, error: errText || "حدث خطأ أثناء السحب من GitHub" };
+  }
+}

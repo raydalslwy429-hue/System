@@ -8,10 +8,10 @@
     "department_code": "admin",
     "department_name": "الإدارة العامة والحوكمة",
     "status": "active",
-    "created_at": "2026-11-07 18:16:03",
+    "created_at": "2026-11-10 05:13:49",
     "job_title": null,
     "is_protected": 1,
-    "can_export_excel": 1,
+    "can_export_excel": 0,
     "custom_role_id": null,
     "custom_role_name": null
   },
@@ -24,12 +24,12 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-07 18:16:03",
-    "job_title": "متابع انتاج",
+    "created_at": "2026-11-10 05:13:49",
+    "job_title": null,
     "is_protected": 0,
     "can_export_excel": 0,
-    "custom_role_id": 7,
-    "custom_role_name": "متابع انتاج"
+    "custom_role_id": null,
+    "custom_role_name": null
   },
   {
     "id": 3,
@@ -40,7 +40,7 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-07 18:16:04",
+    "created_at": "2026-11-10 05:13:50",
     "job_title": null,
     "is_protected": 0,
     "can_export_excel": 0,
@@ -56,12 +56,12 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-07 18:16:04",
-    "job_title": "منفذ انتاج",
+    "created_at": "2026-11-10 05:13:50",
+    "job_title": null,
     "is_protected": 0,
     "can_export_excel": 0,
-    "custom_role_id": 9,
-    "custom_role_name": "منفذ انتاج"
+    "custom_role_id": null,
+    "custom_role_name": null
   },
   {
     "id": 5,
@@ -72,12 +72,12 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-07 18:16:05",
-    "job_title": "منفذ انتاج",
+    "created_at": "2026-11-10 05:13:51",
+    "job_title": null,
     "is_protected": 0,
     "can_export_excel": 0,
-    "custom_role_id": 9,
-    "custom_role_name": "منفذ انتاج"
+    "custom_role_id": null,
+    "custom_role_name": null
   },
   {
     "id": 6,
@@ -88,7 +88,7 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-07 18:16:05",
+    "created_at": "2026-11-10 05:13:51",
     "job_title": null,
     "is_protected": 0,
     "can_export_excel": 0,
@@ -104,7 +104,7 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-07 18:16:06",
+    "created_at": "2026-11-10 05:13:51",
     "job_title": null,
     "is_protected": 0,
     "can_export_excel": 0,
@@ -120,7 +120,7 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-07 18:16:06",
+    "created_at": "2026-11-10 05:13:52",
     "job_title": null,
     "is_protected": 0,
     "can_export_excel": 0,
@@ -136,7 +136,7 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-07 18:16:07",
+    "created_at": "2026-11-10 05:13:52",
     "job_title": null,
     "is_protected": 0,
     "can_export_excel": 0,
@@ -152,12 +152,12 @@
     "department_code": "dept_maintenance",
     "department_name": "إدارة الخدمات المساندة",
     "status": "active",
-    "created_at": "2026-11-07 18:16:08",
-    "job_title": "اداري الخدمات المساندة",
+    "created_at": "2026-11-10 05:13:53",
+    "job_title": null,
     "is_protected": 0,
     "can_export_excel": 0,
-    "custom_role_id": 6,
-    "custom_role_name": "اداري الخدمات المساندة"
+    "custom_role_id": null,
+    "custom_role_name": null
   },
   {
     "id": 11,
@@ -168,7 +168,7 @@
     "department_code": "dept_maintenance",
     "department_name": "إدارة الخدمات المساندة",
     "status": "active",
-    "created_at": "2026-11-07 18:16:08",
+    "created_at": "2026-11-10 05:13:53",
     "job_title": null,
     "is_protected": 0,
     "can_export_excel": 0,
@@ -184,12 +184,12 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-08 22:50:35",
-    "job_title": "اداري الانتاج",
+    "created_at": "2026-11-10 05:13:53",
+    "job_title": null,
     "is_protected": 0,
     "can_export_excel": 0,
-    "custom_role_id": 1,
-    "custom_role_name": "اداري الانتاج"
+    "custom_role_id": null,
+    "custom_role_name": null
   },
   {
     "id": 15,
@@ -200,12 +200,12 @@
     "department_code": "dept_maintenance",
     "department_name": "إدارة الخدمات المساندة",
     "status": "active",
-    "created_at": "2026-11-09 21:10:39",
-    "job_title": "اداري الخدمات المساندة",
+    "created_at": "2026-11-10 05:13:54",
+    "job_title": null,
     "is_protected": 0,
     "can_export_excel": 0,
-    "custom_role_id": 6,
-    "custom_role_name": "اداري الخدمات المساندة"
+    "custom_role_id": null,
+    "custom_role_name": null
   },
   {
     "id": 16,
@@ -216,11 +216,11 @@
     "department_code": "dept_production",
     "department_name": "إدارة المبيعات والتسويق",
     "status": "active",
-    "created_at": "2026-11-09 23:15:38",
-    "job_title": "اداري  المبيعات والتسويق",
+    "created_at": "2026-11-10 05:13:55",
+    "job_title": null,
     "is_protected": 0,
     "can_export_excel": 0,
-    "custom_role_id": 8,
-    "custom_role_name": "اداري  المبيعات والتسويق"
+    "custom_role_id": null,
+    "custom_role_name": null
   }
 ]
