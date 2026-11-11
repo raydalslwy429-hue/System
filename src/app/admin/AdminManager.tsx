@@ -85,6 +85,9 @@ import {
 import OfficialPdfReportModal from "@/components/OfficialPdfReportModal";
 import PermissionsMatrixView from "@/components/PermissionsMatrixView";
 import DataSyncHubModal from "@/components/DataSyncHubModal";
+import CreateDailyReportModal from "@/components/CreateDailyReportModal";
+import DailyReportsArchiveModal from "@/components/DailyReportsArchiveModal";
+import { toggleUserDailyReportAction } from "@/app/actions/daily_reports";
 import InspectorForm from "../inspector/InspectorForm";
 import FormBuilder from "./FormBuilder";
 
@@ -153,6 +156,11 @@ export default function AdminManager({
   const isGeneralAdmin = currentUser?.role === "general_admin";
   const isSystemAdmin = isSuperAdmin || isGeneralAdmin;
   const canDeleteCases = isSuperAdmin || isGeneralAdmin;
+  const canCreateDailyReport = isSuperAdmin || isGeneralAdmin || currentUser?.can_create_daily_report !== 0;
+
+  // Daily Reports Modal States
+  const [showDailyReportModal, setShowDailyReportModal] = useState<boolean>(false);
+  const [showDailyArchiveModal, setShowDailyArchiveModal] = useState<boolean>(false);
 
   // Notification Banner
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -671,6 +679,10 @@ export default function AdminManager({
       group: "العمليات وحالات عدم المطابقة (CAPA)",
       items: [
         { id: "create_case", label: "إنشاء حالة جديدة", icon: PlusCircle, badge: null, color: "text-amber-500" },
+        ...(canCreateDailyReport
+          ? [{ id: "create_daily_report", label: "إنشاء تقرير يومي", icon: FileText, badge: null, color: "text-[#D49A3D]" }]
+          : []),
+        { id: "daily_reports_archive", label: "أرشيف التقارير اليومية", icon: History, badge: null, color: "text-[#D49A3D]" },
         { id: "open_cases", label: "الحالات المفتوحة (بانتظار الفرز)", icon: Inbox, badge: pendingCases.length, color: "text-amber-600" },
         { id: "in_progress_cases", label: "الحالات قيد التنفيذ الميداني", icon: Clock, badge: inProgressCases.length, color: "text-blue-600" },
         { id: "review_cases", label: "الحالات التي تحتاج مراجعة", icon: Search, badge: reviewItems.length, color: "text-purple-600" },
@@ -783,7 +795,15 @@ export default function AdminManager({
                   return (
                     <button
                       key={item.id}
-                      onClick={() => setActiveMenu(item.id)}
+                      onClick={() => {
+                        if (item.id === "create_daily_report") {
+                          setShowDailyReportModal(true);
+                        } else if (item.id === "daily_reports_archive") {
+                          setShowDailyArchiveModal(true);
+                        } else {
+                          setActiveMenu(item.id);
+                        }
+                      }}
                       className={`w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-xs font-bold transition-all text-right cursor-pointer ${
                         isActive
                           ? "bg-[#1B1111] text-[#FFC217] shadow-md shadow-[#1B1111]/15"
@@ -990,6 +1010,18 @@ export default function AdminManager({
                   <Cloud className="w-4 h-4 text-[#FFC217]" />
                   <span>مركز المزامنة السحابية ☁️</span>
                 </button>
+
+                {canCreateDailyReport && (
+                  <button
+                    type="button"
+                    onClick={() => setShowDailyReportModal(true)}
+                    className="px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer bg-gradient-to-r from-[#D49A3D] to-[#9E6E20] hover:brightness-110 text-[#1B1111] shadow-xs"
+                    title="إنشاء وتقديم تقرير يومي جديد"
+                  >
+                    <FileText className="w-4 h-4 text-[#1B1111]" />
+                    <span>إنشاء تقرير يومي 📝</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -2392,6 +2424,7 @@ export default function AdminManager({
                       <th className="py-3 px-4">الإدارة التابع لها</th>
                       <th className="py-3 px-4">رمز المرور (PIN)</th>
                       <th className="py-3 px-4 text-center">إكسل</th>
+                      <th className="py-3 px-4 text-center">التقرير اليومي</th>
                       <th className="py-3 px-4 text-center">الحالة</th>
                       <th className="py-3 px-4 text-center">إجراءات</th>
                     </tr>
@@ -2468,6 +2501,31 @@ export default function AdminManager({
                               title="تفعيل/تعطيل تصدير إكسل"
                             >
                               <Download className="w-4 h-4" />
+                            </button>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <button
+                              onClick={async () => {
+                                const res = await toggleUserDailyReportAction(u.id);
+                                if (res.success) {
+                                  showNotification("success", res.message || "تم تعديل صلاحية التقرير اليومي بنجاح");
+                                  router.refresh();
+                                } else {
+                                  showNotification("error", res.error || "فشل تعديل الصلاحية");
+                                }
+                              }}
+                              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                u.can_create_daily_report !== 0
+                                  ? "text-amber-600 bg-amber-50 hover:bg-amber-100 ring-1 ring-amber-300"
+                                  : "text-slate-300 hover:text-slate-500 bg-slate-50"
+                              }`}
+                              title={
+                                u.can_create_daily_report !== 0
+                                  ? "صلاحية إنشاء تقرير يومي: مفعّلة (انقر للتعطيل)"
+                                  : "صلاحية إنشاء تقرير يومي: معطّلة (انقر للتفعيل)"
+                              }
+                            >
+                              <FileText className="w-4 h-4" />
                             </button>
                           </td>
                           <td className="py-3 px-4 text-center">
@@ -3670,6 +3728,36 @@ export default function AdminManager({
           </div>
         </div>
       )}
+
+      {/* Create Daily Report Modal */}
+      <CreateDailyReportModal
+        isOpen={showDailyReportModal}
+        onClose={() => setShowDailyReportModal(false)}
+        currentUser={{
+          id: Number(currentUser.id),
+          full_name: currentUser.full_name,
+          role: currentUser.role,
+          department_name: currentUser.department_name,
+          department_code: currentUser.department_code,
+        }}
+        locations={locations.map((l) => ({ code: l.code, name: l.name }))}
+        onSuccess={() => {
+          setShowDailyReportModal(false);
+          setShowDailyArchiveModal(true);
+          showNotification("success", "تم إرسال التقرير اليومي بنجاح وإدراجه في الأرشيف");
+        }}
+      />
+
+      {/* Daily Reports Archive Modal */}
+      <DailyReportsArchiveModal
+        isOpen={showDailyArchiveModal}
+        onClose={() => setShowDailyArchiveModal(false)}
+        onOpenCreateNew={() => {
+          setShowDailyArchiveModal(false);
+          setShowDailyReportModal(true);
+        }}
+        canCreateReport={canCreateDailyReport}
+      />
 
     </div>
   );

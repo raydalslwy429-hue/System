@@ -41,8 +41,8 @@ export default async function AdminDashboard() {
   const matrixRes = await db.execute("SELECT role_code, role_name, permissions_json FROM role_permissions_matrix");
   const permissionsMatrix = matrixRes.rows as unknown as any[];
 
-  // Users with user_number
-  const usersRes = await db.execute("SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, is_protected, can_export_excel, custom_role_id, custom_role_name, created_at FROM users ORDER BY COALESCE(user_number, id) ASC");
+  // Users with user_number and daily report permission
+  const usersRes = await db.execute("SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, is_protected, can_export_excel, can_create_daily_report, custom_role_id, custom_role_name, created_at FROM users ORDER BY COALESCE(user_number, id) ASC");
   const allUsers = usersRes.rows as unknown as any[];
 
   const fieldRoles = allUsers

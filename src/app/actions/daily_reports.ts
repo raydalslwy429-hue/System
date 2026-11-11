@@ -135,7 +135,7 @@ export async function toggleUserDailyReportAction(userId: number) {
   });
 
   revalidatePath("/admin");
-  return { success: true };
+  return { success: true, message: "تم تعديل صلاحية التقرير اليومي بنجاح" };
 }
 
 export async function getActiveLocationsAction() {

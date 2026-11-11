@@ -37,6 +37,8 @@ interface AppDrawerProps {
   onOpenOutbox: () => void;
   onOpenResetModal?: () => void;
   onOpenImportModal?: () => void;
+  onOpenDailyReport?: () => void;
+  onOpenDailyArchive?: () => void;
   onSelectMenu?: (menuKey: string) => void;
   outboxCount: number;
   isOnline: boolean;
@@ -50,6 +52,8 @@ export default function AppDrawer({
   onOpenOutbox,
   onOpenResetModal,
   onOpenImportModal,
+  onOpenDailyReport,
+  onOpenDailyArchive,
   onSelectMenu,
   outboxCount,
   isOnline,
@@ -180,6 +184,35 @@ export default function AppDrawer({
                 {outboxCount}
               </span>
             )}
+          </button>
+
+          {/* Universal Section: Daily Reports */}
+          <div className="text-[10px] font-black text-amber-400/80 px-2 py-1 uppercase tracking-wider">
+            التقارير والعمل الميداني
+          </div>
+
+          {(user.role === "super_admin" || user.role === "general_admin" || user.can_create_daily_report !== 0) && (
+            <button
+              onClick={() => {
+                if (onOpenDailyReport) onOpenDailyReport();
+                onClose();
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-amber-300 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <FileText className="w-4 h-4 text-[#FFC217]" />
+              <span>إنشاء تقرير يومي 📝</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => {
+              if (onOpenDailyArchive) onOpenDailyArchive();
+              onClose();
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <Clock className="w-4 h-4 text-amber-200" />
+            <span>أرشيف التقارير اليومية</span>
           </button>
 
           <div className="h-px bg-white/10 my-2"></div>

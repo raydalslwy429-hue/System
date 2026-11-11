@@ -17,11 +17,14 @@ import {
   AlertTriangle,
   Clock,
   Layers,
+  FileText,
 } from "lucide-react";
 import AppDrawer from "@/components/AppDrawer";
 import ChangePinModal from "@/components/ChangePinModal";
 import OutboxModal from "@/components/OutboxModal";
 import SystemModeToggle from "@/components/SystemModeToggle";
+import CreateDailyReportModal from "@/components/CreateDailyReportModal";
+import DailyReportsArchiveModal from "@/components/DailyReportsArchiveModal";
 import { getOfflineQueue, subscribeToQueue } from "@/lib/offline-client";
 
 export default function Navbar({ user }: { user: UserSession }) {
@@ -29,8 +32,17 @@ export default function Navbar({ user }: { user: UserSession }) {
   const [showChangePin, setShowChangePin] = useState(false);
   const [showOutbox, setShowOutbox] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showDailyReportModal, setShowDailyReportModal] = useState(false);
+  const [showDailyArchiveModal, setShowDailyArchiveModal] = useState(false);
   const [outboxCount, setOutboxCount] = useState(0);
   const [isOnline, setIsOnline] = useState(true);
+
+  // Check Daily Report Permission: Super Admin / General Admin always have it;
+  // Other users have it unless explicitly disabled (can_create_daily_report === 0).
+  const canCreateDailyReport =
+    user.role === "super_admin" ||
+    user.role === "general_admin" ||
+    user.can_create_daily_report !== 0;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -49,10 +61,17 @@ export default function Navbar({ user }: { user: UserSession }) {
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
 
+    const handleOpenReport = () => setShowDailyReportModal(true);
+    const handleOpenArchive = () => setShowDailyArchiveModal(true);
+    window.addEventListener("marasim_open_daily_report", handleOpenReport);
+    window.addEventListener("marasim_open_daily_archive", handleOpenArchive);
+
     return () => {
       unsubscribe();
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("marasim_open_daily_report", handleOpenReport);
+      window.removeEventListener("marasim_open_daily_archive", handleOpenArchive);
     };
   }, []);
 
@@ -119,9 +138,22 @@ export default function Navbar({ user }: { user: UserSession }) {
             </div>
           </div>
 
-          {/* Center Section: Interactive System Runtime Mode Toggle (Online / Offline) */}
-          <div className="flex items-center">
+          {/* Center Section: Interactive System Runtime Mode Toggle & Create Daily Report */}
+          <div className="flex items-center gap-3">
             <SystemModeToggle variant="navbar" />
+
+            {/* Daily Report Button - Governed by user permission */}
+            {canCreateDailyReport && (
+              <button
+                type="button"
+                onClick={() => setShowDailyReportModal(true)}
+                className="px-3 py-1.5 bg-gradient-to-r from-[#D49A3D] to-[#9E6E20] hover:brightness-110 text-[#1B1111] font-black rounded-xl text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
+                title="إنشاء وتقديم تقرير يومي جديد"
+              >
+                <FileText className="w-3.5 h-3.5 text-[#1B1111]" />
+                <span className="hidden sm:inline">إنشاء تقرير يومي</span>
+              </button>
+            )}
           </div>
 
           {/* Left Section: Alerts, Outbox, User Info & Logout */}
@@ -222,6 +254,8 @@ export default function Navbar({ user }: { user: UserSession }) {
         user={user}
         onOpenChangePin={() => setShowChangePin(true)}
         onOpenOutbox={() => setShowOutbox(true)}
+        onOpenDailyReport={() => setShowDailyReportModal(true)}
+        onOpenDailyArchive={() => setShowDailyArchiveModal(true)}
         onSelectMenu={handleSelectMenu}
         outboxCount={outboxCount}
         isOnline={isOnline}
@@ -238,6 +272,34 @@ export default function Navbar({ user }: { user: UserSession }) {
       <OutboxModal
         isOpen={showOutbox}
         onClose={() => setShowOutbox(false)}
+      />
+
+      {/* Create Daily Report Modal */}
+      <CreateDailyReportModal
+        isOpen={showDailyReportModal}
+        onClose={() => setShowDailyReportModal(false)}
+        currentUser={{
+          id: Number(user.id),
+          full_name: user.full_name,
+          role: user.role,
+          department_name: user.department_name,
+          department_code: user.department_code,
+        }}
+        onSuccess={() => {
+          setShowDailyReportModal(false);
+          setShowDailyArchiveModal(true);
+        }}
+      />
+
+      {/* Daily Reports Archive Modal */}
+      <DailyReportsArchiveModal
+        isOpen={showDailyArchiveModal}
+        onClose={() => setShowDailyArchiveModal(false)}
+        onOpenCreateNew={() => {
+          setShowDailyArchiveModal(false);
+          setShowDailyReportModal(true);
+        }}
+        canCreateReport={canCreateDailyReport}
       />
     </>
   );
