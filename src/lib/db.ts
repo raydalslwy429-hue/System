@@ -1,13 +1,42 @@
 import { createClient, InStatement } from "@libsql/client";
 import path from "path";
+import fs from "fs";
 
 type LibSqlClient = ReturnType<typeof createClient>;
 
 let cachedClient: LibSqlClient | null = null;
 let cachedMode: string | undefined = undefined;
 
+export function getPersistedDatabaseMode(): "local" | "cloud" {
+  try {
+    const configPath = path.resolve(process.cwd(), "system_mode.json");
+    if (fs.existsSync(configPath)) {
+      const data = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      if (data.mode === "local" || data.mode === "cloud") {
+        return data.mode;
+      }
+    }
+  } catch {}
+  return (process.env.DATABASE_MODE as "local" | "cloud") || "local";
+}
+
+export function setPersistedDatabaseMode(mode: "local" | "cloud") {
+  try {
+    const configPath = path.resolve(process.cwd(), "system_mode.json");
+    fs.writeFileSync(configPath, JSON.stringify({ mode, updatedAt: new Date().toISOString() }, null, 2), "utf-8");
+  } catch {}
+  process.env.DATABASE_MODE = mode;
+  cachedClient = null;
+  cachedMode = undefined;
+}
+
+export function resetDbClient() {
+  cachedClient = null;
+  cachedMode = undefined;
+}
+
 export function getClient(): LibSqlClient {
-  const currentMode = process.env.DATABASE_MODE || "cloud";
+  const currentMode = getPersistedDatabaseMode();
   if (cachedClient && cachedMode === currentMode) {
     return cachedClient;
   }

@@ -21,6 +21,7 @@ import {
 import AppDrawer from "@/components/AppDrawer";
 import ChangePinModal from "@/components/ChangePinModal";
 import OutboxModal from "@/components/OutboxModal";
+import SystemModeToggle from "@/components/SystemModeToggle";
 import { getOfflineQueue, subscribeToQueue } from "@/lib/offline-client";
 
 export default function Navbar({ user }: { user: UserSession }) {
@@ -116,6 +117,11 @@ export default function Navbar({ user }: { user: UserSession }) {
                 النظام الإداري الموحد (CAPA V2)
               </p>
             </div>
+          </div>
+
+          {/* Center Section: Interactive System Runtime Mode Toggle (Online / Offline) */}
+          <div className="flex items-center">
+            <SystemModeToggle variant="navbar" />
           </div>
 
           {/* Left Section: Alerts, Outbox, User Info & Logout */}
