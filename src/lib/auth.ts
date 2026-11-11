@@ -20,6 +20,7 @@ export interface UserSession {
   custom_role_id?: number | null;
   custom_role_name?: string | null;
   can_export_excel?: number;
+  can_create_daily_report?: number;
 }
 
 export async function createSession(user: UserSession) {
@@ -76,8 +77,8 @@ export async function authenticateWithCredentials(
   // Look up user by user_number (if numeric) or full_name
   const isNumeric = /^\d+$/.test(cleanId);
   const sql = isNumeric
-    ? "SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, can_export_excel, custom_role_id, custom_role_name FROM users WHERE user_number = ? OR pin_code = ?"
-    : "SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, can_export_excel, custom_role_id, custom_role_name FROM users WHERE full_name = ?";
+    ? "SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, can_export_excel, can_create_daily_report, custom_role_id, custom_role_name FROM users WHERE user_number = ? OR pin_code = ?"
+    : "SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, can_export_excel, can_create_daily_report, custom_role_id, custom_role_name FROM users WHERE full_name = ?";
   
   const args = isNumeric ? [parseInt(cleanId, 10), cleanPin] : [cleanId];
 
@@ -114,6 +115,7 @@ export async function authenticateWithCredentials(
     custom_role_id: matchedUser.custom_role_id ? Number(matchedUser.custom_role_id) : null,
     custom_role_name: matchedUser.custom_role_name ? String(matchedUser.custom_role_name) : null,
     can_export_excel: matchedUser.can_export_excel ? Number(matchedUser.can_export_excel) : 0,
+    can_create_daily_report: matchedUser.can_create_daily_report !== undefined ? Number(matchedUser.can_create_daily_report) : 1,
   };
 
   await createSession(user);
@@ -127,7 +129,7 @@ export async function authenticateWithPin(pin: string): Promise<{ success: boole
   }
 
   const res = await db.execute({
-    sql: "SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, can_export_excel, custom_role_id, custom_role_name FROM users WHERE pin_code = ?",
+    sql: "SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, can_export_excel, can_create_daily_report, custom_role_id, custom_role_name FROM users WHERE pin_code = ?",
     args: [cleanPin],
   });
 
@@ -152,6 +154,7 @@ export async function authenticateWithPin(pin: string): Promise<{ success: boole
     custom_role_id: row.custom_role_id ? Number(row.custom_role_id) : null,
     custom_role_name: row.custom_role_name ? String(row.custom_role_name) : null,
     can_export_excel: row.can_export_excel ? Number(row.can_export_excel) : 0,
+    can_create_daily_report: row.can_create_daily_report !== undefined ? Number(row.can_create_daily_report) : 1,
   };
 
   await createSession(user);
