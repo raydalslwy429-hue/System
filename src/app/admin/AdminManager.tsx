@@ -1660,7 +1660,7 @@ export default function AdminManager({
                           <span className="font-mono text-xs font-black text-slate-400 bg-slate-100 px-2 py-0.5 rounded-lg">
                             #{c.case_number}
                           </span>
-                          <span className="font-black text-sm text-[#1B1111]">{c.title || c.category_name}</span>
+                          <span className="font-black text-sm text-[#1B1111]">{c.nc_name || c.title || c.category_name || "حالة عدم مطابقة"}</span>
                           <span
                             className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
                               isHigh
@@ -1676,7 +1676,7 @@ export default function AdminManager({
 
                         <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
                           <Clock className="w-3.5 h-3.5" />
-                          <span>{c.created_at}</span>
+                          <span>{c.obs_date || c.created_at} {c.obs_time || ""}</span>
                           {canDeleteCases && (
                             <button
                               onClick={() => handleDeleteCase(c.id, c.case_number)}
@@ -1689,27 +1689,53 @@ export default function AdminManager({
                         </div>
                       </div>
 
-                      {/* Location & Details */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-2 text-slate-600 font-bold">
-                            <Building2 className="w-4 h-4 text-slate-400" />
-                            <span>الإدارة: {c.department_name || c.department_code}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-slate-600 font-bold">
-                            <MapPin className="w-4 h-4 text-slate-400" />
-                            <span>القسم والموقع: {c.section_name || c.location || "-"}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-slate-600 font-bold">
-                            <User className="w-4 h-4 text-slate-400" />
-                            <span>المفتش الراصد: {c.inspector_name || "النظام"}</span>
-                          </div>
+                      {/* Location & Inspector Meta */}
+                      <div className="flex flex-wrap items-center gap-4 text-xs bg-[#FAF7F4] p-3 rounded-2xl border border-slate-100">
+                        <div className="flex items-center gap-2 text-slate-700 font-bold">
+                          <Building2 className="w-4 h-4 text-[#D49A3D]" />
+                          <span>الإدارة: <strong className="text-[#1B1111]">{c.department_name || c.department_code}</strong></span>
+                        </div>
+                        <span className="text-slate-300">|</span>
+                        <div className="flex items-center gap-2 text-slate-700 font-bold">
+                          <MapPin className="w-4 h-4 text-[#682722]" />
+                          <span>القسم والموقع: <strong className="text-[#1B1111]">{c.location_name || c.section_name || c.location || "-"}</strong></span>
+                        </div>
+                        <span className="text-slate-300">|</span>
+                        <div className="flex items-center gap-2 text-slate-700 font-bold">
+                          <User className="w-4 h-4 text-slate-500" />
+                          <span>المفتش الراصد: <strong className="text-[#1B1111]">{c.inspector_name || "النظام"}</strong></span>
+                        </div>
+                      </div>
+
+                      {/* 3 Detail Cards: Description, Root Cause, Inspector Notes */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
+                          <span className="font-black text-[#1B1111] flex items-center gap-1.5">
+                            <Tag className="w-3.5 h-3.5 text-[#D49A3D]" />
+                            <span>وصف عدم المطابقة:</span>
+                          </span>
+                          <p className="text-slate-700 leading-relaxed font-semibold bg-[#FAF7F4] p-2 rounded-xl border border-slate-100">
+                            {c.description || "لا يوجد وصف إضافي مسجل"}
+                          </p>
                         </div>
 
-                        <div className="bg-[#FAF7F4] p-3 rounded-2xl border border-slate-100">
-                          <span className="font-black text-[#1B1111] block mb-1">وصف عدم المطابقة:</span>
-                          <p className="text-slate-600 leading-relaxed font-semibold">
-                            {c.description || "لا يوجد وصف إضافي مسجل"}
+                        <div className="bg-white p-3.5 rounded-2xl border border-amber-200 shadow-2xs space-y-1">
+                          <span className="font-black text-[#682722] flex items-center gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 text-[#682722]" />
+                            <span>السبب الجذري المرصود:</span>
+                          </span>
+                          <p className="text-[#682722] leading-relaxed font-bold bg-[#FAF3F3] p-2 rounded-xl border border-[#682722]/20">
+                            {c.root_cause || "لم يُسجل سبب محدد"}
+                          </p>
+                        </div>
+
+                        <div className="bg-white p-3.5 rounded-2xl border border-blue-200 shadow-2xs space-y-1">
+                          <span className="font-black text-blue-950 flex items-center gap-1.5">
+                            <FileText className="w-3.5 h-3.5 text-blue-600" />
+                            <span>ملاحظات وتوصيات المفتش:</span>
+                          </span>
+                          <p className="text-blue-950 leading-relaxed font-semibold bg-blue-50/70 p-2 rounded-xl border border-blue-100">
+                            {c.inspector_notes || "لا توجد ملاحظات إضافية"}
                           </p>
                         </div>
                       </div>
@@ -1906,12 +1932,46 @@ export default function AdminManager({
                         جاري التنفيذ (جولة {c.current_round || 1})
                       </span>
                     </div>
-                    <div className="font-black text-sm text-[#1B1111]">{c.title || c.category_name}</div>
-                    <div className="text-xs text-slate-500 font-semibold">{c.description}</div>
-                    <div className="text-xs text-slate-400 flex items-center gap-2 pt-2 border-t">
-                      <Building2 className="w-3.5 h-3.5" />
-                      <span>{c.department_name} - {c.section_name || c.location}</span>
+                    <div className="font-black text-sm text-[#1B1111]">{c.nc_name || c.title || c.category_name || "حالة عدم مطابقة"}</div>
+                    
+                    <div className="flex flex-wrap items-center gap-3 text-xs pt-2 border-t text-slate-700">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <Building2 className="w-3.5 h-3.5 text-[#D49A3D]" />
+                        <span>{c.department_name}</span>
+                      </div>
+                      <span className="text-slate-300">|</span>
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <MapPin className="w-3.5 h-3.5 text-[#682722]" />
+                        <span>القسم والموقع: {c.location_name || c.section_name || c.location || "-"}</span>
+                      </div>
+                      <span className="text-slate-300">|</span>
+                      <div className="flex items-center gap-1.5 font-bold text-slate-500">
+                        <User className="w-3.5 h-3.5 text-slate-400" />
+                        <span>المفتش: {c.inspector_name || "النظام"}</span>
+                      </div>
                     </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-xs pt-1">
+                      <div className="bg-[#FAF7F4] p-2.5 rounded-xl border border-slate-100">
+                        <span className="font-black text-[#1B1111] block mb-0.5 text-[11px]">وصف المخالفة:</span>
+                        <p className="text-slate-600 font-semibold">{c.description || "-"}</p>
+                      </div>
+                      <div className="bg-[#FAF3F3] p-2.5 rounded-xl border border-[#682722]/20">
+                        <span className="font-black text-[#682722] block mb-0.5 text-[11px]">السبب المرصود:</span>
+                        <p className="text-[#682722] font-semibold">{c.root_cause || "لم يُحدد"}</p>
+                      </div>
+                      <div className="bg-blue-50/60 p-2.5 rounded-xl border border-blue-100">
+                        <span className="font-black text-blue-900 block mb-0.5 text-[11px]">ملاحظات المفتش:</span>
+                        <p className="text-blue-900 font-semibold">{c.inspector_notes || "لا توجد"}</p>
+                      </div>
+                    </div>
+
+                    {c.assignments_summary && (
+                      <div className="p-2.5 bg-amber-50/60 rounded-xl border border-amber-200/60 text-xs text-amber-900 font-bold flex items-center gap-2">
+                        <Users className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                        <span>المنفذون المكلفون: {c.assignments_summary}</span>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1951,12 +2011,46 @@ export default function AdminManager({
                           <span className="font-mono text-xs font-black text-slate-400 bg-slate-100 px-2 py-0.5 rounded-lg">
                             #{item.case_number}
                           </span>
-                          <span className="font-black text-sm text-[#1B1111]">{item.title || item.category_name}</span>
+                          <span className="font-black text-sm text-[#1B1111]">{item.nc_name || item.title || item.category_name || "حالة عدم مطابقة"}</span>
                           <span className="text-[10px] bg-purple-50 text-purple-800 border border-purple-200 px-2 py-0.5 rounded-full font-black">
                             تم التنفيذ (بانتظار الاعتماد)
                           </span>
                         </div>
                         <span className="text-xs text-slate-400 font-mono">{item.submitted_at}</span>
+                      </div>
+
+                      {/* Location & Department bar */}
+                      <div className="flex flex-wrap items-center gap-4 text-xs bg-[#FAF7F4] p-3 rounded-2xl border border-slate-100">
+                        <div className="flex items-center gap-1.5 font-bold text-slate-700">
+                          <Building2 className="w-3.5 h-3.5 text-[#D49A3D]" />
+                          <span>{item.department_name}</span>
+                        </div>
+                        <span className="text-slate-300">|</span>
+                        <div className="flex items-center gap-1.5 font-bold text-slate-700">
+                          <MapPin className="w-3.5 h-3.5 text-[#682722]" />
+                          <span>القسم والموقع: {item.location_name || item.location || "-"}</span>
+                        </div>
+                        <span className="text-slate-300">|</span>
+                        <div className="flex items-center gap-1.5 font-bold text-slate-500">
+                          <User className="w-3.5 h-3.5 text-slate-400" />
+                          <span>المفتش الراصد: {item.inspector_name || "النظام"}</span>
+                        </div>
+                      </div>
+
+                      {/* Case details: Description, Root Cause, Inspector Notes */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                        <div className="bg-[#FAF7F4] p-3 rounded-2xl border border-slate-200">
+                          <span className="font-black text-[#1B1111] block mb-1">وصف المخالفة:</span>
+                          <p className="text-slate-700 font-semibold">{item.case_desc || item.description || "-"}</p>
+                        </div>
+                        <div className="bg-[#FAF3F3] p-3 rounded-2xl border border-[#682722]/20">
+                          <span className="font-black text-[#682722] block mb-1">السبب المرصود:</span>
+                          <p className="text-[#682722] font-semibold">{item.case_cause || item.root_cause || "لم يُحدد"}</p>
+                        </div>
+                        <div className="bg-blue-50/70 p-3 rounded-2xl border border-blue-200">
+                          <span className="font-black text-blue-900 block mb-1">ملاحظات المفتش:</span>
+                          <p className="text-blue-900 font-semibold">{item.case_inspector_notes || item.inspector_notes || "لا توجد ملاحظات"}</p>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
@@ -2072,12 +2166,46 @@ export default function AdminManager({
                         <Check className="w-3 h-3" /> مغلقة نهائياً
                       </span>
                     </div>
-                    <div className="font-black text-sm text-[#1B1111]">{c.title || c.category_name}</div>
-                    <div className="text-xs text-slate-500 font-semibold">{c.description}</div>
-                    <div className="text-xs text-slate-400 flex items-center gap-2 pt-2 border-t">
-                      <Building2 className="w-3.5 h-3.5" />
-                      <span>{c.department_name} - {c.section_name || c.location}</span>
+                    <div className="font-black text-sm text-[#1B1111]">{c.nc_name || c.title || c.category_name || "حالة عدم مطابقة"}</div>
+                    
+                    <div className="flex flex-wrap items-center gap-3 text-xs pt-2 border-t text-slate-700">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <Building2 className="w-3.5 h-3.5 text-[#D49A3D]" />
+                        <span>{c.department_name}</span>
+                      </div>
+                      <span className="text-slate-300">|</span>
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <MapPin className="w-3.5 h-3.5 text-[#682722]" />
+                        <span>القسم والموقع: {c.location_name || c.section_name || c.location || "-"}</span>
+                      </div>
+                      <span className="text-slate-300">|</span>
+                      <div className="flex items-center gap-1.5 font-bold text-slate-500">
+                        <User className="w-3.5 h-3.5 text-slate-400" />
+                        <span>المفتش: {c.inspector_name || "النظام"}</span>
+                      </div>
                     </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-xs pt-1">
+                      <div className="bg-[#FAF7F4] p-2.5 rounded-xl border border-slate-100">
+                        <span className="font-black text-[#1B1111] block mb-0.5 text-[11px]">وصف المخالفة:</span>
+                        <p className="text-slate-600 font-semibold">{c.description || "-"}</p>
+                      </div>
+                      <div className="bg-[#FAF3F3] p-2.5 rounded-xl border border-[#682722]/20">
+                        <span className="font-black text-[#682722] block mb-0.5 text-[11px]">السبب المرصود:</span>
+                        <p className="text-[#682722] font-semibold">{c.root_cause || "لم يُحدد"}</p>
+                      </div>
+                      <div className="bg-blue-50/60 p-2.5 rounded-xl border border-blue-100">
+                        <span className="font-black text-blue-900 block mb-0.5 text-[11px]">ملاحظات المفتش:</span>
+                        <p className="text-blue-900 font-semibold">{c.inspector_notes || "لا توجد"}</p>
+                      </div>
+                    </div>
+
+                    {c.closed_feedback && (
+                      <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-950 font-bold space-y-1">
+                        <span className="text-emerald-800 font-black block">💡 التوجيه والملاحظات الإدارية الدائمة عند الإغلاق:</span>
+                        <p className="text-emerald-900 font-semibold leading-relaxed">{c.closed_feedback}</p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2131,8 +2259,9 @@ export default function AdminManager({
                   <thead className="bg-[#FAF7F4] text-[#1B1111] font-black border-b border-slate-200">
                     <tr>
                       <th className="py-3 px-4">رقم الحالة</th>
-                      <th className="py-3 px-4">الحالة / التصنيف</th>
-                      <th className="py-3 px-4">الإدارة والموقع</th>
+                      <th className="py-3 px-4">نوع حالة عدم المطابقة</th>
+                      <th className="py-3 px-4">الإدارة والقسم</th>
+                      <th className="py-3 px-4">السبب المرصود والملاحظات</th>
                       <th className="py-3 px-4">مستوى الخطورة</th>
                       <th className="py-3 px-4">المرحلة</th>
                       <th className="py-3 px-4">التاريخ</th>
@@ -2145,21 +2274,39 @@ export default function AdminManager({
                         const matchesQuery =
                           !caseSearchQuery ||
                           String(c.case_number).includes(caseSearchQuery) ||
+                          (c.nc_name || "").includes(caseSearchQuery) ||
                           (c.title || "").includes(caseSearchQuery) ||
                           (c.department_name || "").includes(caseSearchQuery) ||
-                          (c.location || "").includes(caseSearchQuery);
+                          (c.location_name || "").includes(caseSearchQuery) ||
+                          (c.location || "").includes(caseSearchQuery) ||
+                          (c.root_cause || "").includes(caseSearchQuery) ||
+                          (c.inspector_notes || "").includes(caseSearchQuery) ||
+                          (c.description || "").includes(caseSearchQuery);
                         const matchesStatus =
                           caseFilterStatus === "all" ||
-                          (caseFilterStatus === "open" && c.status === "open") ||
-                          (caseFilterStatus === "in_progress" && (c.status === "assigned" || c.status === "in_progress")) ||
+                          (caseFilterStatus === "open" && (c.status === "open" || c.status === "pending_assignment")) ||
+                          (caseFilterStatus === "in_progress" && (c.status === "assigned" || c.status === "in_progress" || c.status === "pending_review")) ||
                           (caseFilterStatus === "closed" && c.status === "closed");
                         return matchesQuery && matchesStatus;
                       })
                       .map((c) => (
                         <tr key={c.id} className="hover:bg-slate-50">
                           <td className="py-3 px-4 font-black font-mono">#{c.case_number}</td>
-                          <td className="py-3 px-4 font-black text-[#1B1111]">{c.title || c.category_name}</td>
-                          <td className="py-3 px-4">{c.department_name} - {c.section_name || c.location}</td>
+                          <td className="py-3 px-4 font-black text-[#1B1111]">
+                            <div>{c.nc_name || c.title || c.category_name}</div>
+                            {c.description && <div className="text-[11px] text-slate-500 font-normal line-clamp-1">{c.description}</div>}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div>{c.department_name}</div>
+                            <div className="text-[11px] text-slate-500 font-normal">{c.location_name || c.section_name || c.location || "-"}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-[11px] space-y-0.5">
+                              {c.root_cause && <div className="text-[#682722] font-bold">السبب: {c.root_cause}</div>}
+                              {c.inspector_notes && <div className="text-blue-900 font-medium">الملاحظات: {c.inspector_notes}</div>}
+                              {!c.root_cause && !c.inspector_notes && <span className="text-slate-400">-</span>}
+                            </div>
+                          </td>
                           <td className="py-3 px-4">
                             <span
                               className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
@@ -2178,15 +2325,15 @@ export default function AdminManager({
                               className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
                                 c.status === "closed"
                                   ? "bg-emerald-50 text-emerald-800"
-                                  : c.status === "open"
+                                  : c.status === "open" || c.status === "pending_assignment"
                                   ? "bg-amber-50 text-amber-800"
                                   : "bg-blue-50 text-blue-800"
                               }`}
                             >
-                              {c.status === "closed" ? "مغلقة" : c.status === "open" ? "مفتوحة" : "قيد التنفيذ"}
+                              {c.status === "closed" ? "مغلقة" : c.status === "open" || c.status === "pending_assignment" ? "مفتوحة" : "قيد التنفيذ"}
                             </span>
                           </td>
-                          <td className="py-3 px-4 font-mono text-[11px] text-slate-400">{c.created_at}</td>
+                          <td className="py-3 px-4 font-mono text-[11px] text-slate-400">{c.obs_date || c.created_at}</td>
                           {canDeleteCases && (
                             <td className="py-3 px-4 text-center">
                               <button

@@ -35,6 +35,7 @@ interface AssignmentItem {
   ncName: string;
   description: string;
   rootCause: string;
+  inspectorNotes?: string;
   obsDate: string;
   obsTime: string;
 }
@@ -45,6 +46,8 @@ interface ClosedCaseItem {
   locationName: string;
   ncName: string;
   description: string;
+  rootCause?: string;
+  inspectorNotes?: string;
   closedAt: string;
   closedFeedback: string;
 }
@@ -216,11 +219,26 @@ export default function FieldQueue({
                   )}
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <h4 className="font-black text-sm text-[#1B1111]">{c.ncName}</h4>
-                  <p className="text-xs text-slate-600 font-medium leading-relaxed bg-[#FAF7F4] p-3 rounded-2xl border border-slate-100">
-                    {c.description}
-                  </p>
+                  <div className="text-xs text-slate-600 font-medium leading-relaxed bg-[#FAF7F4] p-3 rounded-2xl border border-slate-100 space-y-1.5">
+                    <div>
+                      <strong className="text-[#1B1111] font-black">الوصف: </strong>
+                      {c.description}
+                    </div>
+                    {c.rootCause && (
+                      <div>
+                        <strong className="text-[#682722] font-black">السبب المرصود: </strong>
+                        {c.rootCause}
+                      </div>
+                    )}
+                    {c.inspectorNotes && (
+                      <div>
+                        <strong className="text-blue-900 font-black">ملاحظات وتوصيات المفتش: </strong>
+                        {c.inspectorNotes}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Permanent Administrative Feedback Box (Read-Only) */}
@@ -312,24 +330,30 @@ export default function FieldQueue({
                   <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-slate-700">
                     <span className="flex items-center gap-1.5 bg-[#FAF7F4] border border-slate-200 px-3 py-1.5 rounded-xl">
                       <MapPin className="w-4 h-4 text-[#D49A3D]" />
-                      <span>الموقع: {asg.locationName}</span>
+                      <span>الموقع والقسم: {asg.locationName}</span>
                     </span>
                     <span className="flex items-center gap-1.5 bg-[#FAF3F3] text-[#682722] border border-[#682722]/20 px-3 py-1.5 rounded-xl">
                       <Tag className="w-4 h-4 text-[#682722]" />
-                      <span>المخالفة: {asg.ncName}</span>
+                      <span>نوع عدم المطابقة: {asg.ncName}</span>
                     </span>
                   </div>
 
                   {/* Violation Details */}
-                  <div className="p-4 bg-[#FAF7F4] rounded-2xl border border-slate-200/80 space-y-2">
+                  <div className="p-4 bg-[#FAF7F4] rounded-2xl border border-slate-200/80 space-y-2.5">
                     <div className="text-xs font-semibold text-slate-700">
                       <strong className="text-[#1B1111] font-black">وصف المخالفة المرصود: </strong>
                       {asg.description}
                     </div>
                     {asg.rootCause && (
-                      <div className="text-xs font-semibold text-slate-700">
-                        <strong className="text-[#1B1111] font-black">السبب المرصود: </strong>
+                      <div className="text-xs font-semibold text-[#682722] bg-[#FAF3F3] p-2.5 rounded-xl border border-[#682722]/20">
+                        <strong className="text-[#682722] font-black">السبب الجذري المرصود: </strong>
                         {asg.rootCause}
+                      </div>
+                    )}
+                    {asg.inspectorNotes && (
+                      <div className="text-xs font-semibold text-blue-950 bg-blue-50/70 p-2.5 rounded-xl border border-blue-200">
+                        <strong className="text-blue-900 font-black">ملاحظات وتوصيات المفتش: </strong>
+                        {asg.inspectorNotes}
                       </div>
                     )}
                   </div>

@@ -37,6 +37,7 @@ export default async function FieldDashboard() {
       c.nc_name,
       c.description,
       c.root_cause,
+      c.inspector_notes,
       c.obs_date,
       c.obs_time,
       c.status as case_status
@@ -70,6 +71,7 @@ export default async function FieldDashboard() {
     ncName: String(r.nc_name),
     description: String(r.description),
     rootCause: String(r.root_cause || ""),
+    inspectorNotes: String(r.inspector_notes || ""),
     obsDate: String(r.obs_date),
     obsTime: String(r.obs_time),
   }));
@@ -78,7 +80,7 @@ export default async function FieldDashboard() {
   const closedRes = await db.execute({
     sql: `
       SELECT 
-        c.id, c.case_number, c.location_name, c.nc_name, c.description, c.closed_at, 
+        c.id, c.case_number, c.location_name, c.nc_name, c.description, c.root_cause, c.inspector_notes, c.closed_at, 
         COALESCE(c.closed_feedback, a.admin_feedback, 'تم الإغلاق والاعتماد') as closed_feedback
       FROM cases_master c
       JOIN case_assignments a ON c.id = a.case_id
@@ -95,6 +97,8 @@ export default async function FieldDashboard() {
     locationName: String(r.location_name),
     ncName: String(r.nc_name),
     description: String(r.description),
+    rootCause: String(r.root_cause || ""),
+    inspectorNotes: String(r.inspector_notes || ""),
     closedAt: String(r.closed_at || ""),
     closedFeedback: String(r.closed_feedback || "تم الإغلاق والاعتماد"),
   }));

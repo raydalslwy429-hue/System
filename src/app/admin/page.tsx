@@ -100,7 +100,7 @@ export default async function AdminDashboard() {
   const inProgressCasesRes = await db.execute(
     canViewAll
       ? {
-          sql: `SELECT c.id, c.case_number, c.internal_id, c.department_code, c.department_name, c.location_name, c.nc_name, c.inspector_name, c.description, c.status, c.current_round, c.assigned_roles, c.obs_date, c.obs_time, c.created_at,
+          sql: `SELECT c.id, c.case_number, c.internal_id, c.department_code, c.department_name, c.location_name, c.nc_name, c.inspector_name, c.description, c.root_cause, c.inspector_notes, c.status, c.current_round, c.assigned_roles, c.obs_date, c.obs_time, c.created_at,
                        GROUP_CONCAT(COALESCE(a.assigned_user_name, a.dept_name) || ' (' || a.status || ')') as assignments_summary
                 FROM cases_master c
                 LEFT JOIN case_assignments a ON c.id = a.case_id AND c.current_round = a.round
@@ -110,7 +110,7 @@ export default async function AdminDashboard() {
           args: [],
         }
       : {
-          sql: `SELECT c.id, c.case_number, c.internal_id, c.department_code, c.department_name, c.location_name, c.nc_name, c.inspector_name, c.description, c.status, c.current_round, c.assigned_roles, c.obs_date, c.obs_time, c.created_at,
+          sql: `SELECT c.id, c.case_number, c.internal_id, c.department_code, c.department_name, c.location_name, c.nc_name, c.inspector_name, c.description, c.root_cause, c.inspector_notes, c.status, c.current_round, c.assigned_roles, c.obs_date, c.obs_time, c.created_at,
                        GROUP_CONCAT(COALESCE(a.assigned_user_name, a.dept_name) || ' (' || a.status || ')') as assignments_summary
                 FROM cases_master c
                 LEFT JOIN case_assignments a ON c.id = a.case_id AND c.current_round = a.round
@@ -130,7 +130,7 @@ export default async function AdminDashboard() {
                   e.id as exec_row_id, e.exec_id, e.case_id, e.case_number, e.assignment_id, e.round,
                   e.executor_name, e.executor_role, e.role_code, e.action_taken, e.notes as exec_notes, e.created_at as exec_time,
                   c.department_code, c.department_name, c.location_name, c.nc_name, c.inspector_name,
-                  c.description as case_desc, c.root_cause as case_cause, c.obs_date, c.obs_time,
+                  c.description as case_desc, c.root_cause as case_cause, c.inspector_notes as case_inspector_notes, c.obs_date, c.obs_time,
                   c.nc_name as title, c.nc_name as category_name, c.location_name as location,
                   e.executor_name as assigned_to_user_name,
                   e.created_at as submitted_at,
@@ -147,7 +147,7 @@ export default async function AdminDashboard() {
                   e.id as exec_row_id, e.exec_id, e.case_id, e.case_number, e.assignment_id, e.round,
                   e.executor_name, e.executor_role, e.role_code, e.action_taken, e.notes as exec_notes, e.created_at as exec_time,
                   c.department_code, c.department_name, c.location_name, c.nc_name, c.inspector_name,
-                  c.description as case_desc, c.root_cause as case_cause, c.obs_date, c.obs_time,
+                  c.description as case_desc, c.root_cause as case_cause, c.inspector_notes as case_inspector_notes, c.obs_date, c.obs_time,
                   c.nc_name as title, c.nc_name as category_name, c.location_name as location,
                   e.executor_name as assigned_to_user_name,
                   e.created_at as submitted_at,
@@ -166,14 +166,14 @@ export default async function AdminDashboard() {
   const closedCasesRes = await db.execute(
     canViewAll
       ? {
-          sql: `SELECT id, case_number, internal_id, department_code, department_name, location_name, nc_name, inspector_name, description, status, current_round, assigned_roles, obs_date, obs_time, created_at, closed_at, closed_feedback
+          sql: `SELECT id, case_number, internal_id, department_code, department_name, location_name, nc_name, inspector_name, description, root_cause, inspector_notes, status, current_round, assigned_roles, obs_date, obs_time, created_at, closed_at, closed_feedback
                 FROM cases_master
                 WHERE status = 'closed'
                 ORDER BY case_number DESC`,
           args: [],
         }
       : {
-          sql: `SELECT id, case_number, internal_id, department_code, department_name, location_name, nc_name, inspector_name, description, status, current_round, assigned_roles, obs_date, obs_time, created_at, closed_at, closed_feedback
+          sql: `SELECT id, case_number, internal_id, department_code, department_name, location_name, nc_name, inspector_name, description, root_cause, inspector_notes, status, current_round, assigned_roles, obs_date, obs_time, created_at, closed_at, closed_feedback
                 FROM cases_master
                 WHERE status = 'closed' AND department_code = ?
                 ORDER BY case_number DESC`,
