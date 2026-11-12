@@ -75,7 +75,7 @@ export function generateExcelWorkbookXML(
    <Interior ss:Color="#D49A3D" ss:Pattern="Solid"/>
   </Style>
   <Style ss:ID="DataRowEven">
-   <Alignment ss:Vertical="Center" ss:ReadingOrder="RightToLeft"/>
+   <Alignment ss:Vertical="Center" ss:WrapText="1" ss:ReadingOrder="RightToLeft"/>
    <Borders>
     <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
     <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
@@ -85,7 +85,7 @@ export function generateExcelWorkbookXML(
    <Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
   </Style>
   <Style ss:ID="DataRowOdd">
-   <Alignment ss:Vertical="Center" ss:ReadingOrder="RightToLeft"/>
+   <Alignment ss:Vertical="Center" ss:WrapText="1" ss:ReadingOrder="RightToLeft"/>
    <Borders>
     <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
     <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
@@ -180,11 +180,13 @@ export function downloadExcelFile(arg1: string, arg2?: string) {
 }
 
 function escapeXML(str: string): string {
-  if (!str) return "";
+  if (str === null || str === undefined) return "";
   return String(str)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
+    .replace(/'/g, "&apos;")
+    .replace(/\r\n/g, "&#10;")
+    .replace(/[\r\n]/g, "&#10;");
 }

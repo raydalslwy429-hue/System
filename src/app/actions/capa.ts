@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { generateExcelWorkbookXML, ExcelColumn } from "@/lib/excel-helper";
 import { authenticateWithPin, authenticateWithCredentials, destroySession, getSession, UserSession } from "@/lib/auth";
 
 function isAuthorizedAdmin(session: any): session is UserSession {
@@ -1775,4 +1776,321 @@ export async function pullCodeFromGithubAction() {
     }
     return { success: false, error: errText || "حدث خطأ أثناء السحب من GitHub" };
   }
+}
+
+// Helper: Format date/time cleanly for Excel
+function formatExcelDateTime(val: any): string {
+  if (!val) return "-";
+  try {
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return String(val);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const min = String(d.getMinutes()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+  } catch {
+    return String(val);
+  }
+}
+
+function mapCaseStatusToArabic(status: string): string {
+  switch (status) {
+    case "pending_assignment":
+      return "بانتظار الفرز الإداري والتكليف";
+    case "assigned":
+    case "in_progress":
+      return "قيد التنفيذ الميداني";
+    case "pending_review":
+      return "بانتظار المراجعة والاعتماد";
+    case "closed":
+      return "مغلق ومعتمد نهائياً";
+    default:
+      return status || "غير محدد";
+  }
+}
+
+interface ScenarioStepData {
+  round: number;
+  assignee: string;
+  status: string;
+  asgTime: string;
+  actionTaken: string;
+  execNotes: string;
+  responseTime: string;
+  adminDirectives: string;
+}
+
+/**
+ * 📊 تصدير السجل التراكمي الشامل للحالات إلى إكسيل (Audit Trail)
+ * صف واحد لكل حالة + تمدد أفقي متكرر للسيناريوهات والمراحل + أعمدة إغلاق موحدة
+ */
+export async function exportCasesAuditTrailToExcelAction() {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, error: "يجب تسجيل الدخول أولاً لتصدير التقارير" };
+  }
+
+  const isAdmin = isAuthorizedAdmin(session);
+  const canExport = isAdmin || Number((session as any).can_export_excel) === 1;
+
+  if (!canExport) {
+    return { success: false, error: "غير مصرح لك بتصدير تقارير الإكسيل" };
+  }
+
+  // 1. Determine Scope
+  const canViewAll =
+    session.role === "super_admin" ||
+    session.role === "general_admin" ||
+    !session.department_code ||
+    session.department_code === "dept_all";
+
+  // 2. Fetch Cases
+  let casesSql = `
+    SELECT 
+      c.id, c.case_number, c.internal_id, c.department_code, c.department_name,
+      c.location_code, c.location_name, c.nc_code, c.nc_name,
+      c.inspector_name, c.inspector_pin, c.description, c.root_cause, c.inspector_notes,
+      c.status, c.current_round, c.assigned_roles, c.obs_date, c.obs_time,
+      c.created_at, c.closed_at, c.closed_feedback, c.in_progress_note
+    FROM cases_master c
+  `;
+  const casesArgs: any[] = [];
+  if (!canViewAll) {
+    casesSql += " WHERE c.department_code = ?";
+    casesArgs.push(session.department_code);
+  }
+  casesSql += " ORDER BY c.case_number DESC";
+
+  const casesRes = await db.execute({ sql: casesSql, args: casesArgs });
+  const cases = casesRes.rows as unknown as any[];
+
+  if (cases.length === 0) {
+    return { success: false, error: "لا توجد حالات مسجلة متاحة للتصدير حالياً" };
+  }
+
+  // 3. Fetch All Assignments
+  const asgRes = await db.execute(
+    "SELECT id, asg_id, case_id, case_number, round, assigned_dept, dept_name, admin_name, admin_instructions, reassign_notes, status, created_at, completed_at, assigned_user_id, assigned_user_name, admin_feedback, is_accepted, accepted_at FROM case_assignments ORDER BY case_id ASC, round ASC, id ASC"
+  );
+  const allAssignments = asgRes.rows as unknown as any[];
+
+  // 4. Fetch All Executions
+  const execRes = await db.execute(
+    "SELECT id, exec_id, case_id, case_number, assignment_id, round, executor_name, executor_role, role_code, action_taken, notes, created_at FROM case_executions ORDER BY case_id ASC, round ASC, id ASC"
+  );
+  const allExecutions = execRes.rows as unknown as any[];
+
+  // 5. Structure Scenarios for Each Case
+  const casesScenariosMap = new Map<number, ScenarioStepData[]>();
+
+  for (const c of cases) {
+    const caseId = Number(c.id);
+    const caseNum = Number(c.case_number);
+
+    const caseAsgs = allAssignments.filter(
+      (a) => Number(a.case_id) === caseId || Number(a.case_number) === caseNum
+    );
+    const caseExecs = allExecutions.filter(
+      (e) => Number(e.case_id) === caseId || Number(e.case_number) === caseNum
+    );
+
+    const scenarios: ScenarioStepData[] = [];
+    const matchedExecIds = new Set<string>();
+
+    for (const asg of caseAsgs) {
+      // Find matching execution for this assignment
+      const matchingExec = caseExecs.find(
+        (e) =>
+          String(e.assignment_id) === String(asg.asg_id) ||
+          (!matchedExecIds.has(String(e.exec_id)) &&
+            Number(e.round) === Number(asg.round) &&
+            ((asg.assigned_user_name && e.executor_name === asg.assigned_user_name) ||
+              !asg.assigned_user_name))
+      );
+
+      if (matchingExec) {
+        matchedExecIds.add(String(matchingExec.exec_id));
+      }
+
+      // Assignment status
+      let asgStatus = "معلق (قيد التنفيذ)";
+      if (Number(asg.is_accepted) === 1 || asg.status === "approved") {
+        asgStatus = "معتمد ومقبول ✅";
+      } else if (asg.status === "completed") {
+        asgStatus = "تم الرد (بانتظار الاعتماد) ⏳";
+      } else if (asg.status === "canceled") {
+        asgStatus = "ملغي ❌";
+      }
+
+      // Administrative Directives and Alerts for this stage
+      const directiveParts: string[] = [];
+      if (asg.admin_instructions && asg.admin_instructions.trim()) {
+        directiveParts.push(`توجيه التكليف: ${asg.admin_instructions.trim()}`);
+      }
+      if (asg.reassign_notes && asg.reassign_notes.trim()) {
+        directiveParts.push(`ملاحظات إعادة الإسناد: ${asg.reassign_notes.trim()}`);
+      }
+      if (asg.admin_feedback && asg.admin_feedback.trim()) {
+        directiveParts.push(`تعقيب الاعتماد: ${asg.admin_feedback.trim()}`);
+      }
+      if (c.in_progress_note && c.in_progress_note.trim() && asg.status === "pending") {
+        directiveParts.push(`تنبيه أثناء التنفيذ: ${c.in_progress_note.trim()}`);
+      }
+      const adminDirectives = directiveParts.length > 0 ? directiveParts.join(" | ") : "-";
+
+      scenarios.push({
+        round: Number(asg.round || 1),
+        assignee: asg.assigned_user_name || asg.dept_name || "غير محدد",
+        status: asgStatus,
+        asgTime: formatExcelDateTime(asg.created_at),
+        actionTaken: matchingExec?.action_taken || "-",
+        execNotes: matchingExec?.notes || "-",
+        responseTime: formatExcelDateTime(asg.completed_at || matchingExec?.created_at),
+        adminDirectives,
+      });
+    }
+
+    // Append any unmatched executions if present
+    for (const exec of caseExecs) {
+      if (!matchedExecIds.has(String(exec.exec_id))) {
+        scenarios.push({
+          round: Number(exec.round || 1),
+          assignee: exec.executor_name || "منفذ ميداني",
+          status: "تم التنفيذ الميداني",
+          asgTime: "-",
+          actionTaken: exec.action_taken || "-",
+          execNotes: exec.notes || "-",
+          responseTime: formatExcelDateTime(exec.created_at),
+          adminDirectives: "-",
+        });
+      }
+    }
+
+    casesScenariosMap.set(caseId, scenarios);
+  }
+
+  // 6. Calculate Maximum Scenarios to Ensure Fixed Uniform Structure
+  const actualMaxScenarios = Math.max(
+    0,
+    ...Array.from(casesScenariosMap.values()).map((s) => s.length)
+  );
+  // Default to at least 10 scenario blocks, or dynamically expand if cases exceed 10
+  const totalScenarioColumns = Math.max(10, actualMaxScenarios);
+
+  // 7. Define Comprehensive Excel Columns
+  const columns: ExcelColumn[] = [
+    // --- أولاً: البيانات الأساسية الثابتة للحالة (صف واحد لكل حالة) ---
+    { header: "رقم الحالة", key: "case_number", width: 90 },
+    { header: "المعرف الداخلي", key: "internal_id", width: 130 },
+    { header: "الإدارة المسؤولة", key: "department_name", width: 160 },
+    { header: "القسم والموقع التشغيلي", key: "location_name", width: 170 },
+    { header: "نوع حالة عدم المطابقة", key: "nc_name", width: 200 },
+    { header: "المفتش الراصد", key: "inspector_name", width: 130 },
+    { header: "تاريخ الرصد", key: "obs_date", width: 100 },
+    { header: "وقت الرصد", key: "obs_time", width: 80 },
+    { header: "الوصف التفصيلي لعدم المطابقة", key: "description", width: 240 },
+    { header: "السبب الجذري المرصود", key: "root_cause", width: 200 },
+    { header: "ملاحظات وتوجيهات المفتش", key: "inspector_notes", width: 200 },
+    { header: "الحالة العامة للبلاغ", key: "status_label", width: 140 },
+    { header: "الجولة الحالية", key: "current_round", width: 90 },
+    { header: "تاريخ ووقت تسجيل البلاغ", key: "created_at", width: 140 },
+  ];
+
+  // --- ثانياً: التمدد الأفقي المنظم للسيناريوهات والمراحل (1 إلى N) ---
+  for (let i = 1; i <= totalScenarioColumns; i++) {
+    columns.push(
+      { header: `(السيناريو ${i}) المكلف بالإجراء`, key: `s${i}_assignee`, width: 150 },
+      { header: `(السيناريو ${i}) حالة الإسناد`, key: `s${i}_status`, width: 130 },
+      { header: `(السيناريو ${i}) تاريخ ووقت الإسناد`, key: `s${i}_asg_time`, width: 140 },
+      { header: `(السيناريو ${i}) تفاصيل الإجراء الميداني المتخذ`, key: `s${i}_action`, width: 220 },
+      { header: `(السيناريو ${i}) ملاحظات المنفذ الميداني`, key: `s${i}_notes`, width: 200 },
+      { header: `(السيناريو ${i}) تاريخ ووقت الرد الميداني`, key: `s${i}_response_time`, width: 140 },
+      { header: `(السيناريو ${i}) التوجيهات والتنبيهات الإدارية`, key: `s${i}_directives`, width: 220 }
+    );
+  }
+
+  // --- ثالثاً: توثيق التغذية الراجعة والإغلاق النهائي ---
+  columns.push(
+    { header: "حالة الإغلاق", key: "closure_status", width: 140 },
+    { header: "تاريخ ووقت الإغلاق", key: "closed_at", width: 140 },
+    { header: "التغذية الراجعة والتعقيب النهائي للإدارة عند الإغلاق", key: "closed_feedback", width: 260 },
+    { header: "إجمالي مراحل الإجراء والسيناريوهات", key: "total_scenarios", width: 130 }
+  );
+
+  // 8. Build Flat Rows (Exact 1-to-1 Row per Case)
+  const rows: Array<Record<string, any>> = cases.map((c) => {
+    const caseId = Number(c.id);
+    const scenarios = casesScenariosMap.get(caseId) || [];
+
+    const rowObj: Record<string, any> = {
+      case_number: Number(c.case_number),
+      internal_id: String(c.internal_id || `CAPA-2026-${String(c.case_number).padStart(4, "0")}`),
+      department_name: String(c.department_name || "-"),
+      location_name: String(c.location_name || "-"),
+      nc_name: String(c.nc_name || "-"),
+      inspector_name: String(c.inspector_name || "-"),
+      obs_date: String(c.obs_date || "-"),
+      obs_time: String(c.obs_time || "-"),
+      description: String(c.description || "-"),
+      root_cause: String(c.root_cause || "-"),
+      inspector_notes: String(c.inspector_notes || "-"),
+      status_label: mapCaseStatusToArabic(c.status),
+      current_round: Number(c.current_round || 1),
+      created_at: formatExcelDateTime(c.created_at),
+    };
+
+    // Populate every scenario column (leave empty/dash if case hasn't reached this scenario)
+    for (let i = 1; i <= totalScenarioColumns; i++) {
+      const s = scenarios[i - 1];
+      if (s) {
+        rowObj[`s${i}_assignee`] = s.assignee;
+        rowObj[`s${i}_status`] = s.status;
+        rowObj[`s${i}_asg_time`] = s.asgTime;
+        rowObj[`s${i}_action`] = s.actionTaken;
+        rowObj[`s${i}_notes`] = s.execNotes;
+        rowObj[`s${i}_response_time`] = s.responseTime;
+        rowObj[`s${i}_directives`] = s.adminDirectives;
+      } else {
+        rowObj[`s${i}_assignee`] = "-";
+        rowObj[`s${i}_status`] = "-";
+        rowObj[`s${i}_asg_time`] = "-";
+        rowObj[`s${i}_action`] = "-";
+        rowObj[`s${i}_notes`] = "-";
+        rowObj[`s${i}_response_time`] = "-";
+        rowObj[`s${i}_directives`] = "-";
+      }
+    }
+
+    // Populate closing and audit summary
+    rowObj.closure_status = c.status === "closed" ? "مغلق نهائياً ومعتمد" : "لا يزال قيد المتابعة والتنفيذ";
+    rowObj.closed_at = c.closed_at ? formatExcelDateTime(c.closed_at) : "-";
+    rowObj.closed_feedback = c.closed_feedback && String(c.closed_feedback).trim() ? String(c.closed_feedback).trim() : "-";
+    rowObj.total_scenarios = scenarios.length;
+
+    return rowObj;
+  });
+
+  // 9. Generate Native Excel SpreadsheetML XML
+  const dateStr = new Date().toISOString().split("T")[0];
+  const scopeTitle = canViewAll ? "الشامل لكافة الإدارات" : `إدارة ${session.department_name || ""}`;
+  const xml = generateExcelWorkbookXML({
+    title: `السجل التراكمي الشامل لحالات عدم المطابقة - ${scopeTitle} - مطعم المراسيم`,
+    sheets: [
+      {
+        name: "السجل_التراكمي_للحالات",
+        columns,
+        rows,
+      },
+    ],
+  });
+
+  return {
+    success: true,
+    xml,
+    count: rows.length,
+    totalScenarios: totalScenarioColumns,
+    filename: `marasim_capa_audit_trail_${dateStr}.xls`,
+  };
 }

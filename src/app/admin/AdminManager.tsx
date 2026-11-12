@@ -52,6 +52,7 @@ import {
   UserPlus,
   MessageSquare,
   Bell,
+  FileSpreadsheet,
 } from "lucide-react";
 import {
   assignCaseAction,
@@ -86,7 +87,9 @@ import {
   resetDatabaseAction,
   assignAdditionalUsersAction,
   addInProgressNoteAction,
+  exportCasesAuditTrailToExcelAction,
 } from "@/app/actions/capa";
+import { downloadExcelFile } from "@/lib/excel-helper";
 import OfficialPdfReportModal from "@/components/OfficialPdfReportModal";
 import PermissionsMatrixView from "@/components/PermissionsMatrixView";
 import DataSyncHubModal from "@/components/DataSyncHubModal";
@@ -178,6 +181,26 @@ export default function AdminManager({
   const [activeCloseInProgressModal, setActiveCloseInProgressModal] = useState<any | null>(null);
   const [closeInProgressNotes, setCloseInProgressNotes] = useState<string>("");
 
+  // Excel Export State & Runner
+  const [exportingExcel, setExportingExcel] = useState(false);
+
+  const handleExportCasesExcel = async () => {
+    setExportingExcel(true);
+    try {
+      const res = await exportCasesAuditTrailToExcelAction();
+      if (res.success && res.xml) {
+        downloadExcelFile(res.xml, res.filename || "marasim_capa_audit_trail.xls");
+        showNotification("success", `🎉 تم بنجاح تصدير السجل التراكمي الشامل لـ (${res.count}) حالة متضمنة (${res.totalScenarios}) سيناريوهات ومراحل إلى Excel!`);
+      } else {
+        showNotification("error", res.error || "فشل تصدير ملف الإكسيل");
+      }
+    } catch (err: any) {
+      showNotification("error", `حدث خطأ أثناء التصدير: ${err?.message || "خطأ غير متوقع"}`);
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
   // Notification Banner
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const showNotification = (type: "success" | "error", text: string) => {
@@ -199,6 +222,11 @@ export default function AdminManager({
     const handleDrawerNavigate = (e: any) => {
       const key = e.detail?.key;
       if (key) {
+        if (key === "export_excel") {
+          handleExportCasesExcel();
+          return;
+        }
+
         const adminOnlyKeys = [
           "system_config", "departments", "sections", "roles", "categories", 
           "permissions_matrix", "users", "dynamic_forms", "reports", "audit", "change_pin"
@@ -1578,13 +1606,28 @@ export default function AdminManager({
                 </h3>
                 <p className="text-xs text-slate-500 font-semibold">استخراج التقارير الرسمية المصورة وطباعة محاضر الإغلاق</p>
               </div>
-              <button
-                onClick={() => setShowPdfModal(true)}
-                className="px-5 py-2.5 bg-[#682722] hover:bg-[#7D2F28] text-white font-black text-xs rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all"
-              >
-                <Printer className="w-4 h-4 text-[#FFC217]" />
-                <span>إصدار تقرير رسمي مصور (PDF)</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportCasesExcel}
+                  disabled={exportingExcel}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all active:scale-95 disabled:bg-slate-300"
+                >
+                  {exportingExcel ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  ) : (
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
+                  )}
+                  <span>تصدير السجل التراكمي (Excel)</span>
+                </button>
+                <button
+                  onClick={() => setShowPdfModal(true)}
+                  className="px-5 py-2.5 bg-[#682722] hover:bg-[#7D2F28] text-white font-black text-xs rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all"
+                >
+                  <Printer className="w-4 h-4 text-[#FFC217]" />
+                  <span>إصدار تقرير رسمي مصور (PDF)</span>
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1603,6 +1646,43 @@ export default function AdminManager({
               <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-1">
                 <span className="text-xs text-emerald-600 font-bold">الحالات المكتملة والمغلقة</span>
                 <div className="text-2xl font-black text-emerald-700">{closedCases.length}</div>
+              </div>
+            </div>
+
+            {/* Detailed Excel Export Banner */}
+            <div className="p-6 rounded-3xl bg-white border border-emerald-200/80 shadow-sm space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-emerald-50 text-emerald-700 rounded-2xl border border-emerald-200">
+                    <FileSpreadsheet className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-sm text-[#1B1111]">
+                      السجل التراكمي الشامل ومسارات الحالات (Excel Audit Trail)
+                    </h4>
+                    <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                      هيكلة أفقية احترافية: صف واحد لكل حالة + تمدد منظم لجميع السيناريوهات والمراحل + توثيق الإغلاق والتعقيب النهائي
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportCasesExcel}
+                  disabled={exportingExcel}
+                  className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all active:scale-95 disabled:bg-slate-300"
+                >
+                  {exportingExcel ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <span>جارٍ التوليد والتصدير...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4 text-emerald-100" />
+                      <span>تحميل ملف الإكسيل التراكمي (.xls)</span>
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           </div>
@@ -2374,6 +2454,22 @@ export default function AdminManager({
                 </h3>
                 <p className="text-xs text-slate-500 font-semibold">البحث والتصفية ومتابعة كافة الحالات المسجلة في المنظومة</p>
               </div>
+
+              {/* Excel Export Button */}
+              <button
+                type="button"
+                onClick={handleExportCasesExcel}
+                disabled={exportingExcel}
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-2xl shadow-md flex items-center gap-2 cursor-pointer transition-all active:scale-95 disabled:bg-slate-300"
+                title="تصدير السجل الكامل لكل حالة مع جميع السيناريوهات والمراحل إلى ملف Excel"
+              >
+                {exportingExcel ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                ) : (
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
+                )}
+                <span>تصدير السجل التراكمي (Excel)</span>
+              </button>
             </div>
 
             {/* Filter and Search Bar */}
