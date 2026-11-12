@@ -15,6 +15,7 @@ import {
   Clock,
   ShieldAlert,
   Sparkles,
+  Bell,
 } from "lucide-react";
 
 interface AssignmentItem {
@@ -36,6 +37,7 @@ interface AssignmentItem {
   description: string;
   rootCause: string;
   inspectorNotes?: string;
+  inProgressNote?: string;
   obsDate: string;
   obsTime: string;
 }
@@ -357,6 +359,19 @@ export default function FieldQueue({
                       </div>
                     )}
                   </div>
+
+                  {/* Live Urgent Admin Directive / Note (أثناء التنفيذ) */}
+                  {asg.inProgressNote && (
+                    <div className="p-4 bg-gradient-to-r from-amber-500/15 via-rose-500/10 to-amber-500/15 border-2 border-amber-500 rounded-2xl text-xs space-y-1.5 shadow-sm">
+                      <div className="flex items-center gap-2 font-black text-[#682722]">
+                        <Bell className="w-4 h-4 text-[#D49A3D] animate-bounce shrink-0" />
+                        <span>🔔 تنبيه وملاحظة إدارية عاجلة (أثناء التنفيذ):</span>
+                      </div>
+                      <p className="text-slate-900 font-bold leading-relaxed pr-6 bg-white/80 p-2.5 rounded-xl border border-amber-200">
+                        {asg.inProgressNote}
+                      </p>
+                    </div>
+                  )}
 
                   {/* Admin Instructions */}
                   {asg.adminInstructions && (

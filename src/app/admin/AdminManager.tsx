@@ -49,6 +49,9 @@ import {
   RotateCw,
   Loader2,
   GitBranch,
+  UserPlus,
+  MessageSquare,
+  Bell,
 } from "lucide-react";
 import {
   assignCaseAction,
@@ -81,6 +84,8 @@ import {
   toggleCategoryStatusAction,
   createInspectionAction,
   resetDatabaseAction,
+  assignAdditionalUsersAction,
+  addInProgressNoteAction,
 } from "@/app/actions/capa";
 import OfficialPdfReportModal from "@/components/OfficialPdfReportModal";
 import PermissionsMatrixView from "@/components/PermissionsMatrixView";
@@ -161,6 +166,17 @@ export default function AdminManager({
   // Daily Reports Modal States
   const [showDailyReportModal, setShowDailyReportModal] = useState<boolean>(false);
   const [showDailyArchiveModal, setShowDailyArchiveModal] = useState<boolean>(false);
+
+  // In-Progress Case Actions States (3 Options: Additional Assign, Write Note, Close Directly)
+  const [activeAssignAdditionalModal, setActiveAssignAdditionalModal] = useState<any | null>(null);
+  const [additionalSelectedUserIds, setAdditionalSelectedUserIds] = useState<number[]>([]);
+  const [additionalInstructions, setAdditionalInstructions] = useState<string>("");
+
+  const [activeWriteNoteModal, setActiveWriteNoteModal] = useState<any | null>(null);
+  const [inProgressNoteText, setInProgressNoteText] = useState<string>("");
+
+  const [activeCloseInProgressModal, setActiveCloseInProgressModal] = useState<any | null>(null);
+  const [closeInProgressNotes, setCloseInProgressNotes] = useState<string>("");
 
   // Notification Banner
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -2004,6 +2020,69 @@ export default function AdminManager({
                         <span>المنفذون المكلفون: {c.assignments_summary}</span>
                       </div>
                     )}
+
+                    {/* Live In-Progress Note Banner */}
+                    {c.in_progress_note && (
+                      <div className="p-3 bg-gradient-to-r from-amber-500/10 via-rose-500/5 to-amber-500/10 rounded-2xl border border-amber-300 text-xs space-y-1">
+                        <div className="flex items-center gap-1.5 font-black text-[#682722]">
+                          <Bell className="w-3.5 h-3.5 text-[#D49A3D] animate-bounce shrink-0" />
+                          <span>توجيه وملاحظة الإدارة الحالية للمنفذين:</span>
+                        </div>
+                        <p className="text-slate-800 font-bold bg-white/90 p-2.5 rounded-xl border border-amber-200 leading-relaxed">
+                          {c.in_progress_note}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* 3 CONTROL BUTTONS FOR IN-PROGRESS CASE */}
+                    <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] font-black text-slate-400">خيارات التحكم بالحالة:</span>
+                      
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* خيار 1: إسناد لشخص إضافي */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveAssignAdditionalModal(c);
+                            setAdditionalSelectedUserIds([]);
+                            setAdditionalInstructions("");
+                          }}
+                          className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 hover:text-blue-900 border border-blue-200 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs active:scale-95"
+                          title="إسناد الحالة لشخص آخر أو أكثر دون أن تختفي من المنفذين السابقين"
+                        >
+                          <UserPlus className="w-3.5 h-3.5 text-blue-600" />
+                          <span>إسناد لشخص إضافي</span>
+                        </button>
+
+                        {/* خيار 2: كتابة ملاحظة أو تنبيه */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveWriteNoteModal(c);
+                            setInProgressNoteText(c.in_progress_note || "");
+                          }}
+                          className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 hover:text-amber-950 border border-amber-300 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs active:scale-95"
+                          title="كتابة ملاحظة أو تنبيه يظهر مباشرة للمنفذين المعلقة عندهم المهمة"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
+                          <span>كتابة ملاحظة للمنفذين</span>
+                        </button>
+
+                        {/* خيار 3: إغلاق المهمة بالكامل */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveCloseInProgressModal(c);
+                            setCloseInProgressNotes("");
+                          }}
+                          className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-[#682722] hover:text-rose-900 border border-[#682722]/30 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs active:scale-95"
+                          title="إغلاق المهمة بالكامل وإنهائها في أي وقت وهي لا تزال قيد التنفيذ"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5 text-[#682722]" />
+                          <span>إغلاق المهمة</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -3728,6 +3807,341 @@ export default function AdminManager({
           </div>
         </div>
       )}
+
+      {/* 👥 MODAL 1: ASSIGN ADDITIONAL PERSONS (إسناد لشخص إضافي) */}
+      {activeAssignAdditionalModal && (() => {
+        const c = activeAssignAdditionalModal;
+        const alreadyAssignedIds = (c.assigned_user_ids || "")
+          .split(",")
+          .map((idStr: string) => Number(idStr.trim()))
+          .filter((n: number) => !isNaN(n) && n > 0);
+
+        // Filter fieldRoles: prioritize agents of the same department or all
+        const deptAgents = fieldRoles.filter((u) => u.department_code === c.department_code);
+        const candidates = deptAgents.length > 0 ? deptAgents : fieldRoles;
+
+        const handleAdditionalAssignSubmit = async () => {
+          if (additionalSelectedUserIds.length === 0) {
+            showNotification("error", "يرجى اختيار شخص إضافي واحد على الأقل للإسناد");
+            return;
+          }
+          setIsSubmitting(true);
+          try {
+            const selectedObjects = candidates
+              .filter((u) => additionalSelectedUserIds.includes(u.id))
+              .map((u) => ({
+                id: u.id,
+                name: u.full_name || u.name,
+                deptCode: u.department_code,
+              }));
+
+            const res = await assignAdditionalUsersAction(c.id, selectedObjects, additionalInstructions);
+            if (res.success) {
+              showNotification("success", res.message || "تم إسناد المهمة للمنفذين الإضافيين بنجاح");
+              setActiveAssignAdditionalModal(null);
+              setAdditionalSelectedUserIds([]);
+              setAdditionalInstructions("");
+              router.refresh();
+            } else {
+              showNotification("error", res.error || "فشل إسناد المهمة");
+            }
+          } catch (err: any) {
+            showNotification("error", err.message || "حدث خطأ غير متوقع");
+          } finally {
+            setIsSubmitting(false);
+          }
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 bg-[#1B1111]/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#FAF7F4] rounded-[2.5rem] max-w-lg w-full p-6 shadow-2xl space-y-4 border-2 border-blue-400">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                <h4 className="text-base font-black text-[#1B1111] flex items-center gap-2">
+                  <UserPlus className="w-5 h-5 text-blue-600" />
+                  <span>إسناد لشخص إضافي - بلاغ #{c.case_number}</span>
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setActiveAssignAdditionalModal(null)}
+                  className="text-slate-400 hover:text-slate-700 font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="bg-blue-50/80 border border-blue-200 p-3 rounded-2xl text-xs space-y-1 text-blue-950 font-semibold">
+                <p className="font-black">ℹ️ التكليف الإضافي يحافظ على التكليفات السابقة:</p>
+                <p>لن يتم استبعاد أي منفذ كُلف سابقاً، وستظهر المهمة للشخص المضاف فوراً في قائمة المهام لديه.</p>
+                {c.assignments_summary && (
+                  <p className="pt-1 text-[11px] text-slate-600">
+                    <strong>المنفذون الحاليون:</strong> {c.assignments_summary}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-[#1B1111] mb-1.5">
+                  اختر منفذاً إضافياً أو أكثر من ({c.department_name || "الإدارة"}):
+                </label>
+                <div className="max-h-48 overflow-y-auto space-y-1.5 p-2 bg-white rounded-2xl border border-slate-200">
+                  {candidates.map((u) => {
+                    const isAlreadyAssigned = alreadyAssignedIds.includes(u.id);
+                    const isSelected = additionalSelectedUserIds.includes(u.id);
+
+                    return (
+                      <label
+                        key={u.id}
+                        className={`flex items-center justify-between p-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          isAlreadyAssigned
+                            ? "bg-slate-100/80 text-slate-400 cursor-not-allowed opacity-75"
+                            : isSelected
+                            ? "bg-blue-50 text-blue-900 border border-blue-300"
+                            : "hover:bg-slate-50 text-slate-700"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            disabled={isAlreadyAssigned}
+                            checked={isSelected}
+                            onChange={(e) => {
+                              if (isAlreadyAssigned) return;
+                              if (e.target.checked) {
+                                setAdditionalSelectedUserIds([...additionalSelectedUserIds, u.id]);
+                              } else {
+                                setAdditionalSelectedUserIds(
+                                  additionalSelectedUserIds.filter((id) => id !== u.id)
+                                );
+                              }
+                            }}
+                            className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                          />
+                          <span>{u.full_name || u.name}</span>
+                          <span className="font-mono text-[10px] text-slate-400">#{u.user_number || u.id}</span>
+                        </div>
+
+                        {isAlreadyAssigned ? (
+                          <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-black">
+                            مسند إليه مسبقاً ✅
+                          </span>
+                        ) : u.job_title ? (
+                          <span className="text-[10px] text-slate-500">{u.job_title}</span>
+                        ) : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-[#1B1111] mb-1">
+                  توجيهات أو ملاحظات خاصة للمنفذين الجدد (اختياري):
+                </label>
+                <textarea
+                  rows={2}
+                  value={additionalInstructions}
+                  onChange={(e) => setAdditionalInstructions(e.target.value)}
+                  placeholder="اكتب أي تعليمات إضافية للمكلفين الجدد لمساعدتهم في المعالجة السريعة..."
+                  className="w-full text-xs font-semibold p-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none bg-white"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setActiveAssignAdditionalModal(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAdditionalAssignSubmit}
+                  disabled={isSubmitting || additionalSelectedUserIds.length === 0}
+                  className="px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black disabled:opacity-50 cursor-pointer shadow-md transition-all flex items-center gap-1.5"
+                >
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                  <span>تأكيد الإسناد الإضافي ({additionalSelectedUserIds.length})</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 📝 MODAL 2: WRITE NOTE / ALERT TO IN-PROGRESS EXECUTORS (كتابة ملاحظة) */}
+      {activeWriteNoteModal && (() => {
+        const c = activeWriteNoteModal;
+
+        const handleWriteNoteSubmit = async () => {
+          if (!inProgressNoteText.trim()) {
+            showNotification("error", "يرجى كتابة نص الملاحظة أو التنبيه للمنفذين");
+            return;
+          }
+          setIsSubmitting(true);
+          try {
+            const res = await addInProgressNoteAction(c.id, inProgressNoteText);
+            if (res.success) {
+              showNotification("success", res.message || "تم إرسال الملاحظة والتنبيه للمنفذين بنجاح");
+              setActiveWriteNoteModal(null);
+              setInProgressNoteText("");
+              router.refresh();
+            } else {
+              showNotification("error", res.error || "فشل إرسال الملاحظة");
+            }
+          } catch (err: any) {
+            showNotification("error", err.message || "حدث خطأ أثناء إرسال الملاحظة");
+          } finally {
+            setIsSubmitting(false);
+          }
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 bg-[#1B1111]/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#FAF7F4] rounded-[2.5rem] max-w-lg w-full p-6 shadow-2xl space-y-4 border-2 border-amber-400">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                <h4 className="text-base font-black text-[#1B1111] flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-amber-600" />
+                  <span>كتابة ملاحظة أو تنبيه للمنفذين - بلاغ #{c.case_number}</span>
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setActiveWriteNoteModal(null)}
+                  className="text-slate-400 hover:text-slate-700 font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl text-xs space-y-1 text-amber-950 font-semibold">
+                <p className="font-black flex items-center gap-1.5 text-amber-900">
+                  <Bell className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>ظهور مباشر وفوري:</span>
+                </p>
+                <p>الملاحظة التي ستكتبها ستظهر كشريط تنبيه عاجل وبارز مباشرة لكل المنفذين المكلفين في لوحة المهام الميدانية لديهم.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-[#1B1111] mb-1">
+                  نص الملاحظة أو التوجيه الإداري العاجل (إلزامي) <span className="text-[#682722]">*</span>:
+                </label>
+                <textarea
+                  rows={4}
+                  value={inProgressNoteText}
+                  onChange={(e) => setInProgressNoteText(e.target.value)}
+                  placeholder="اكتب الملاحظة أو التنبيه هنا، مثل: يرجى سرعة استبدال لوحة التقطيع فوراً قبل نهاية الوردية..."
+                  className="w-full text-xs font-semibold p-3.5 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none bg-white"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setActiveWriteNoteModal(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={handleWriteNoteSubmit}
+                  disabled={isSubmitting || !inProgressNoteText.trim()}
+                  className="px-5 py-2.5 rounded-2xl bg-[#D49A3D] hover:bg-[#B88228] text-[#1B1111] text-xs font-black disabled:opacity-50 cursor-pointer shadow-md transition-all flex items-center gap-1.5"
+                >
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  <span>إرسال التنبيه فوراً للمنفذين</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 🛑 MODAL 3: CLOSE TASK DIRECTLY IN-PROGRESS (إغلاق المهمة وهي قيد التنفيذ) */}
+      {activeCloseInProgressModal && (() => {
+        const c = activeCloseInProgressModal;
+
+        const handleCloseInProgressSubmit = async () => {
+          if (!closeInProgressNotes.trim()) {
+            showNotification("error", "يرجى كتابة سبب أو ملاحظات الإغلاق النهائي كتغذية راجعة للمنفذين");
+            return;
+          }
+          setIsSubmitting(true);
+          try {
+            const res = await closeCaseEntirelyAction(c.id, closeInProgressNotes);
+            if (res.success) {
+              showNotification("success", "تم إغلاق المهمة بالكامل بنجاح ونقلها إلى الحالات المغلقة");
+              setActiveCloseInProgressModal(null);
+              setCloseInProgressNotes("");
+              router.refresh();
+            } else {
+              showNotification("error", res.error || "فشل إغلاق الحالة");
+            }
+          } catch (err: any) {
+            showNotification("error", err.message || "حدث خطأ غير متوقع");
+          } finally {
+            setIsSubmitting(false);
+          }
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 bg-[#1B1111]/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#FAF7F4] rounded-[2.5rem] max-w-lg w-full p-6 shadow-2xl space-y-4 border-2 border-rose-500">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                <h4 className="text-base font-black text-[#682722] flex items-center gap-2">
+                  <AlertOctagon className="w-5 h-5 text-rose-600" />
+                  <span>إغلاق المهمة بالكامل وهي قيد التنفيذ - بلاغ #{c.case_number}</span>
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setActiveCloseInProgressModal(null)}
+                  className="text-slate-400 hover:text-slate-700 font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="bg-[#FAF3F3] border border-[#682722]/30 p-3.5 rounded-2xl text-xs space-y-1.5 text-[#682722] font-semibold">
+                <p className="font-black text-rose-900">🛑 إنهاء نهائي وفوري للحالة:</p>
+                <p>سيتم إغلاق البلاغ بالكامل الآن ونقله إلى سجل الحالات المغلقة وإغلاق تكليفات المنفذين فوراً دون انتظار رفع الإجراءات الميدانية.</p>
+                <p>ملاحظاتك المسجلة هنا ستظهر للمنفذين كتغذية راجعة إدارية لمنع تكرار المخالفة.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-[#1B1111] mb-1">
+                  سبب وملاحظات الإغلاق النهائي (إلزامي - ستظهر كتغذية راجعة) <span className="text-[#682722]">*</span>:
+                </label>
+                <textarea
+                  rows={3}
+                  value={closeInProgressNotes}
+                  onChange={(e) => setCloseInProgressNotes(e.target.value)}
+                  placeholder="مثال: تم إنهاء المشكلة والتوجيه الشفهي للمنفذ / تم حل المخالفة بالتعاون مع الإدارة العامة..."
+                  className="w-full text-xs font-semibold p-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#682722] resize-none bg-white"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setActiveCloseInProgressModal(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800"
+                >
+                  تراجع
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCloseInProgressSubmit}
+                  disabled={isSubmitting || !closeInProgressNotes.trim()}
+                  className="px-5 py-2.5 rounded-2xl bg-[#682722] hover:bg-[#7D2F28] text-white text-xs font-black disabled:opacity-50 cursor-pointer shadow-md transition-all flex items-center gap-1.5"
+                >
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  <span>تأكيد الإغلاق النهائي وإنهاء المهمة</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Create Daily Report Modal */}
       <CreateDailyReportModal

@@ -370,6 +370,159 @@ export async function assignCaseAction(
   return { success: true };
 }
 
+// ➕ ASSIGN TO ADDITIONAL PERSON(S) FOR IN-PROGRESS CASE (إسناد لشخص إضافي دون حذف السابقين)
+export async function assignAdditionalUsersAction(
+  caseId: number,
+  targetUsers: Array<{ id: number; name: string; deptCode: string }>,
+  instructions?: string
+) {
+  const session = await getSession();
+  if (!session) return { success: false, error: "يرجى تسجيل الدخول أولاً" };
+
+  const perms = await getUserEffectivePermissions(session);
+  if (perms.can_assign === "none") {
+    return { success: false, error: "ليس لديك صلاحية إسناد أو تكليف البلاغات" };
+  }
+
+  if (!targetUsers || targetUsers.length === 0) {
+    return { success: false, error: "يرجى اختيار موظف إضافي واحد على الأقل" };
+  }
+
+  const caseRes = await db.execute({
+    sql: "SELECT case_number, current_round, department_code, assigned_roles FROM cases_master WHERE id = ?",
+    args: [caseId],
+  });
+  if (caseRes.rows.length === 0) return { success: false, error: "الحالة غير موجودة" };
+
+  const caseRow = caseRes.rows[0];
+  const caseNumber = Number(caseRow.case_number);
+  const round = Number(caseRow.current_round);
+  const currentAssignedRoles = String(caseRow.assigned_roles || "");
+
+  // Fetch departments mapping
+  const usersRes = await db.execute("SELECT department_code, department_name FROM users");
+  const deptMap: Record<string, string> = {};
+  usersRes.rows.forEach((r) => {
+    deptMap[String(r.department_code)] = String(r.department_name);
+  });
+
+  const newlyAssignedNames: string[] = [];
+
+  for (const u of targetUsers) {
+    const asgId = `ASG-${caseNumber}-R${round}-U${u.id}`;
+    // Insert new assignment row for this user (or update if existed previously in this round)
+    await db.execute({
+      sql: `INSERT OR REPLACE INTO case_assignments (
+        asg_id, case_id, case_number, round, assigned_dept, dept_name, assigned_user_id, assigned_user_name, admin_name, admin_instructions, status, is_accepted
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0)`,
+      args: [
+        asgId,
+        caseId,
+        caseNumber,
+        round,
+        u.deptCode,
+        deptMap[u.deptCode] || u.deptCode,
+        u.id,
+        u.name,
+        session.full_name,
+        instructions || "",
+      ],
+    });
+    newlyAssignedNames.push(u.name);
+  }
+
+  // Update cases_master assigned_roles by appending newly assigned users safely
+  const existingList = currentAssignedRoles ? currentAssignedRoles.split(",").map((s) => s.trim()) : [];
+  for (const name of newlyAssignedNames) {
+    if (!existingList.includes(name)) {
+      existingList.push(name);
+    }
+  }
+
+  await db.execute({
+    sql: "UPDATE cases_master SET assigned_roles = ?, updated_at = datetime('now') WHERE id = ?",
+    args: [existingList.join(", "), caseId],
+  });
+
+  // Audit Log
+  await db.execute({
+    sql: `INSERT INTO audit_logs (log_id, case_number, event_type, actor_name, actor_role, prev_state, new_state, details)
+          VALUES (?, ?, 'ADDITIONAL_ASSIGNMENT', ?, ?, 'in_progress', 'in_progress', ?)`,
+    args: [
+      `LOG-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      caseNumber,
+      session.full_name,
+      session.role,
+      `تم إسناد إضافي للمنفذين: ${newlyAssignedNames.join(", ")} بتوجيه: ${instructions || "لا توجد ملاحظات إضافية"}`,
+    ],
+  });
+
+  revalidatePath("/admin");
+  revalidatePath("/field");
+  return {
+    success: true,
+    message: `تم إسناد الحالة بنجاح إلى (${newlyAssignedNames.join("، ")}) دون المساس بالتكليفات السابقة.`,
+  };
+}
+
+// 📝 WRITE NOTE / DIRECTIVE TO IN-PROGRESS EXECUTORS (كتابة ملاحظة أو تنبيه تظهر مباشرة للمنفذين)
+export async function addInProgressNoteAction(caseId: number, note: string) {
+  const session = await getSession();
+  if (!session) return { success: false, error: "يرجى تسجيل الدخول أولاً" };
+
+  if (!note || !note.trim()) {
+    return { success: false, error: "يرجى كتابة نص الملاحظة أو التنبيه للمنفذين" };
+  }
+
+  const caseRes = await db.execute({
+    sql: "SELECT case_number, current_round FROM cases_master WHERE id = ?",
+    args: [caseId],
+  });
+  if (caseRes.rows.length === 0) return { success: false, error: "الحالة غير موجودة" };
+
+  const caseNumber = Number(caseRes.rows[0].case_number);
+  const round = Number(caseRes.rows[0].current_round);
+  const trimmedNote = note.trim();
+
+  // 1. Update cases_master with the direct note
+  await db.execute({
+    sql: "UPDATE cases_master SET in_progress_note = ?, updated_at = datetime('now') WHERE id = ?",
+    args: [trimmedNote, caseId],
+  });
+
+  // 2. Also update admin_instructions for active assignments of this case
+  const nowStr = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+  await db.execute({
+    sql: `UPDATE case_assignments 
+          SET admin_instructions = CASE 
+            WHEN admin_instructions IS NULL OR admin_instructions = '' THEN ? 
+            ELSE admin_instructions || ' | [تنبيه إداري ' || ? || ']: ' || ? 
+          END
+          WHERE case_id = ? AND round = ? AND status != 'closed'`,
+    args: [trimmedNote, nowStr, trimmedNote, caseId, round],
+  });
+
+  // 3. Audit log
+  await db.execute({
+    sql: `INSERT INTO audit_logs (log_id, case_number, event_type, actor_name, actor_role, prev_state, new_state, details)
+          VALUES (?, ?, 'ADMIN_DIRECTIVE_ISSUED', ?, ?, 'in_progress', 'in_progress', ?)`,
+    args: [
+      `LOG-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      caseNumber,
+      session.full_name,
+      session.role,
+      `تم إرسال تنبيه وملاحظة إدارية للمنفذين: "${trimmedNote}"`,
+    ],
+  });
+
+  revalidatePath("/admin");
+  revalidatePath("/field");
+  return {
+    success: true,
+    message: "تم إرسال الملاحظة والتنبيه للمنفذين بنجاح وسيظهر لهم فوراً في لوحة التنفيذ.",
+  };
+}
+
 // ==========================================
 // 🛠️ FIELD AGENT ACTIONS
 // ==========================================

@@ -100,7 +100,8 @@ export default async function AdminDashboard() {
   const inProgressCasesRes = await db.execute(
     canViewAll
       ? {
-          sql: `SELECT c.id, c.case_number, c.internal_id, c.department_code, c.department_name, c.location_name, c.nc_name, c.inspector_name, c.description, c.root_cause, c.inspector_notes, c.status, c.current_round, c.assigned_roles, c.obs_date, c.obs_time, c.created_at,
+          sql: `SELECT c.id, c.case_number, c.internal_id, c.department_code, c.department_name, c.location_name, c.nc_name, c.inspector_name, c.description, c.root_cause, c.inspector_notes, c.in_progress_note, c.status, c.current_round, c.assigned_roles, c.obs_date, c.obs_time, c.created_at,
+                       GROUP_CONCAT(DISTINCT a.assigned_user_id) as assigned_user_ids,
                        GROUP_CONCAT(COALESCE(a.assigned_user_name, a.dept_name) || ' (' || a.status || ')') as assignments_summary
                 FROM cases_master c
                 LEFT JOIN case_assignments a ON c.id = a.case_id AND c.current_round = a.round
@@ -110,7 +111,8 @@ export default async function AdminDashboard() {
           args: [],
         }
       : {
-          sql: `SELECT c.id, c.case_number, c.internal_id, c.department_code, c.department_name, c.location_name, c.nc_name, c.inspector_name, c.description, c.root_cause, c.inspector_notes, c.status, c.current_round, c.assigned_roles, c.obs_date, c.obs_time, c.created_at,
+          sql: `SELECT c.id, c.case_number, c.internal_id, c.department_code, c.department_name, c.location_name, c.nc_name, c.inspector_name, c.description, c.root_cause, c.inspector_notes, c.in_progress_note, c.status, c.current_round, c.assigned_roles, c.obs_date, c.obs_time, c.created_at,
+                       GROUP_CONCAT(DISTINCT a.assigned_user_id) as assigned_user_ids,
                        GROUP_CONCAT(COALESCE(a.assigned_user_name, a.dept_name) || ' (' || a.status || ')') as assignments_summary
                 FROM cases_master c
                 LEFT JOIN case_assignments a ON c.id = a.case_id AND c.current_round = a.round

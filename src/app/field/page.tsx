@@ -38,6 +38,7 @@ export default async function FieldDashboard() {
       c.description,
       c.root_cause,
       c.inspector_notes,
+      c.in_progress_note,
       c.obs_date,
       c.obs_time,
       c.status as case_status
@@ -72,6 +73,7 @@ export default async function FieldDashboard() {
     description: String(r.description),
     rootCause: String(r.root_cause || ""),
     inspectorNotes: String(r.inspector_notes || ""),
+    inProgressNote: r.in_progress_note ? String(r.in_progress_note) : undefined,
     obsDate: String(r.obs_date),
     obsTime: String(r.obs_time),
   }));
