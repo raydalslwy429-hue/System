@@ -38,6 +38,8 @@ interface AssignmentItem {
   rootCause: string;
   inspectorNotes?: string;
   inProgressNote?: string;
+  actionTaken?: string;
+  executorNotes?: string;
   obsDate: string;
   obsTime: string;
 }
@@ -50,6 +52,8 @@ interface ClosedCaseItem {
   description: string;
   rootCause?: string;
   inspectorNotes?: string;
+  actionTaken?: string;
+  executorNotes?: string;
   closedAt: string;
   closedFeedback: string;
 }
@@ -243,6 +247,24 @@ export default function FieldQueue({
                   </div>
                 </div>
 
+                {/* Executor Field Response & Notes */}
+                {(c.actionTaken || c.executorNotes) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    {c.actionTaken && (
+                      <div className="bg-[#FAF7F4] p-3 rounded-2xl border border-slate-200">
+                        <span className="font-bold text-slate-500 block mb-0.5 text-[11px]">🛠️ الإجراء الذي قمت بتنفيذه:</span>
+                        <p className="text-slate-800 font-bold">{c.actionTaken}</p>
+                      </div>
+                    )}
+                    {c.executorNotes && (
+                      <div className="bg-blue-50/70 p-3 rounded-2xl border border-blue-200">
+                        <span className="font-bold text-blue-900 block mb-0.5 text-[11px]">💬 ملاحظاتك التي أرفقتها:</span>
+                        <p className="text-blue-950 font-bold">{c.executorNotes}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Permanent Administrative Feedback Box (Read-Only) */}
                 <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 rounded-2xl border-2 border-emerald-400 space-y-2">
                   <div className="flex items-center justify-between">
@@ -394,11 +416,29 @@ export default function FieldQueue({
 
                   {/* CONDITIONAL BODY: Accepted vs Pending Review vs Action Inputs */}
                   {asg.isAccepted || asg.asgStatus === "accepted" || asg.asgStatus === "approved" ? (
-                    <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-400 rounded-2xl space-y-2">
+                    <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-400 rounded-2xl space-y-2.5">
                       <div className="flex items-center gap-2 text-emerald-900 font-black text-xs">
                         <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
                         <span>تم قبول واعتماد معالجتك من قِبل إدارة القسم بنجاح ✅</span>
                       </div>
+
+                      {(asg.actionTaken || asg.executorNotes) && (
+                        <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 text-xs space-y-1.5">
+                          {asg.actionTaken && (
+                            <div>
+                              <span className="font-bold text-slate-500 block text-[11px]">🛠️ الإجراء التصحيحي المعتمد:</span>
+                              <p className="font-black text-slate-800">{asg.actionTaken}</p>
+                            </div>
+                          )}
+                          {asg.executorNotes && (
+                            <div>
+                              <span className="font-bold text-blue-600 block text-[11px]">💬 ملاحظاتك المرفقة:</span>
+                              <p className="font-bold text-blue-950 bg-blue-50/70 p-2 rounded-lg border border-blue-200">{asg.executorNotes}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {asg.adminFeedback && (
                         <div className="p-3 bg-white/90 rounded-xl border border-emerald-200 text-xs text-emerald-950 font-bold">
                           <span className="text-emerald-800 font-black block mb-0.5">ملاحظات وتوجيه اعتماد الإدارة:</span>
@@ -410,11 +450,29 @@ export default function FieldQueue({
                       </p>
                     </div>
                   ) : asg.asgStatus === "completed" ? (
-                    <div className="p-4 bg-purple-50 border-2 border-purple-300 rounded-2xl space-y-2">
+                    <div className="p-4 bg-purple-50 border-2 border-purple-300 rounded-2xl space-y-3">
                       <div className="flex items-center gap-2 text-purple-900 font-black text-xs">
                         <Clock className="w-5 h-5 text-purple-600 flex-shrink-0" />
                         <span>تم إرسال ردك وإجراءك التصحيحي للإدارة بنجاح وهو قيد المراجعة والاعتماد ⏳</span>
                       </div>
+
+                      {(asg.actionTaken || asg.executorNotes) && (
+                        <div className="bg-white/90 p-3 rounded-xl border border-purple-200 text-xs space-y-2">
+                          {asg.actionTaken && (
+                            <div>
+                              <span className="font-bold text-slate-500 block text-[11px]">🛠️ الإجراء التصحيحي الذي أرسلته:</span>
+                              <p className="font-black text-slate-800">{asg.actionTaken}</p>
+                            </div>
+                          )}
+                          {asg.executorNotes && (
+                            <div>
+                              <span className="font-bold text-blue-600 block text-[11px]">💬 ملاحظاتك المرفقة:</span>
+                              <p className="font-bold text-blue-950 bg-blue-50/70 p-2 rounded-lg border border-blue-200">{asg.executorNotes}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       <p className="text-[11px] text-purple-800 font-bold">
                         📌 بمجرد اعتماد الإدارة لردك ستتحول حالتك إلى &quot;مقبولة&quot;، أو ستعاد إليك في حال طلبت الإدارة استكمال المهمة.
                       </p>

@@ -41,9 +41,12 @@ export default async function FieldDashboard() {
       c.in_progress_note,
       c.obs_date,
       c.obs_time,
-      c.status as case_status
+      c.status as case_status,
+      e.action_taken,
+      e.notes as executor_notes
     FROM case_assignments a
     JOIN cases_master c ON a.case_id = c.id
+    LEFT JOIN case_executions e ON a.asg_id = e.assignment_id
     WHERE (a.assigned_user_id = ? OR (a.assigned_dept = ? AND a.assigned_user_id IS NULL)) 
       AND a.status IN ('pending', 'completed', 'accepted', 'approved') AND c.status != 'closed'
     ORDER BY a.round DESC, a.case_number DESC
@@ -74,6 +77,8 @@ export default async function FieldDashboard() {
     rootCause: String(r.root_cause || ""),
     inspectorNotes: String(r.inspector_notes || ""),
     inProgressNote: r.in_progress_note ? String(r.in_progress_note) : undefined,
+    actionTaken: r.action_taken ? String(r.action_taken) : undefined,
+    executorNotes: r.executor_notes ? String(r.executor_notes) : undefined,
     obsDate: String(r.obs_date),
     obsTime: String(r.obs_time),
   }));
@@ -83,9 +88,11 @@ export default async function FieldDashboard() {
     sql: `
       SELECT 
         c.id, c.case_number, c.location_name, c.nc_name, c.description, c.root_cause, c.inspector_notes, c.closed_at, 
-        COALESCE(c.closed_feedback, a.admin_feedback, 'تم الإغلاق والاعتماد') as closed_feedback
+        COALESCE(c.closed_feedback, a.admin_feedback, 'تم الإغلاق والاعتماد') as closed_feedback,
+        e.action_taken, e.notes as executor_notes
       FROM cases_master c
       JOIN case_assignments a ON c.id = a.case_id
+      LEFT JOIN case_executions e ON a.asg_id = e.assignment_id
       WHERE (a.assigned_user_id = ? OR a.assigned_dept = ?) AND c.status = 'closed'
       GROUP BY c.id
       ORDER BY c.closed_at DESC LIMIT 20
@@ -101,6 +108,8 @@ export default async function FieldDashboard() {
     description: String(r.description),
     rootCause: String(r.root_cause || ""),
     inspectorNotes: String(r.inspector_notes || ""),
+    actionTaken: r.action_taken ? String(r.action_taken) : undefined,
+    executorNotes: r.executor_notes ? String(r.executor_notes) : undefined,
     closedAt: String(r.closed_at || ""),
     closedFeedback: String(r.closed_feedback || "تم الإغلاق والاعتماد"),
   }));

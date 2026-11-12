@@ -2164,29 +2164,49 @@ export default function AdminManager({
                         </div>
                       </div>
 
+                      {/* Executor Field Response & Notes */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                        <div className="space-y-2">
-                          <div>
-                            <span className="text-slate-400 font-bold block mb-0.5">المنفذ الميداني:</span>
-                            <span className="font-black text-[#1B1111]">{item.assigned_to_user_name || item.assigned_to_dept}</span>
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-500 font-bold">المنفذ الميداني المكلف:</span>
+                            <span className="font-black text-[#1B1111] bg-emerald-50 text-emerald-900 border border-emerald-200 px-2.5 py-0.5 rounded-lg">
+                              {item.assigned_to_user_name || item.executor_name || item.assigned_to_dept}
+                            </span>
                           </div>
                           <div>
-                            <span className="text-slate-400 font-bold block mb-0.5">تقرير وإجراء المعالجة:</span>
-                            <p className="bg-[#FAF7F4] p-3 rounded-2xl border text-slate-700 font-semibold leading-relaxed">
+                            <span className="text-slate-500 font-bold block mb-1">🛠️ تقرير وإجراء المعالجة المتخذ ميدانياً:</span>
+                            <p className="bg-[#FAF7F4] p-3 rounded-2xl border border-slate-200 text-slate-800 font-semibold leading-relaxed">
                               {item.action_taken || "تم إنجاز المعالجة المطلوبة"}
                             </p>
                           </div>
                         </div>
 
-                        {item.evidence_url && (
+                        <div className="space-y-3">
+                          {/* بند ملاحظات المنفذ الميداني */}
                           <div>
-                            <span className="text-slate-400 font-bold block mb-1">صورة إثبات المعالجة:</span>
-                            <div className="relative rounded-2xl overflow-hidden border border-slate-200 h-44 bg-slate-50 flex items-center justify-center">
-                              <img src={item.evidence_url} alt="إثبات الإنجاز" className="object-contain max-h-full max-w-full" />
+                            <span className="text-blue-900 font-bold block mb-1 flex items-center gap-1.5">
+                              <MessageSquare className="w-4 h-4 text-blue-600" />
+                              <span>💬 بند ملاحظات المنفذ الميداني:</span>
+                            </span>
+                            <div className="bg-blue-50/80 p-3 rounded-2xl border border-blue-200 text-blue-950 font-semibold leading-relaxed min-h-[58px]">
+                              {item.exec_notes || item.notes ? (
+                                <span className="font-bold">{item.exec_notes || item.notes}</span>
+                              ) : (
+                                <span className="text-slate-400 font-normal italic">لا توجد ملاحظات إضافية مسجلة من قِبل المنفذ</span>
+                              )}
                             </div>
                           </div>
-                        )}
+                        </div>
                       </div>
+
+                      {item.evidence_url && (
+                        <div className="text-xs pt-1">
+                          <span className="text-slate-400 font-bold block mb-1">صورة إثبات المعالجة:</span>
+                          <div className="relative rounded-2xl overflow-hidden border border-slate-200 h-44 bg-slate-50 flex items-center justify-center">
+                            <img src={item.evidence_url} alt="إثبات الإنجاز" className="object-contain max-h-full max-w-full" />
+                          </div>
+                        </div>
+                      )}
 
                       {/* Approval Actions */}
                       <div className="flex flex-wrap gap-2 pt-3 border-t justify-end">
@@ -2310,6 +2330,23 @@ export default function AdminManager({
                         <p className="text-blue-900 font-semibold">{c.inspector_notes || "لا توجد"}</p>
                       </div>
                     </div>
+
+                    {(c.action_taken || c.executor_notes) && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
+                        {c.action_taken && (
+                          <div className="bg-[#FAF7F4] p-2.5 rounded-xl border border-slate-200">
+                            <span className="font-black text-slate-700 block mb-0.5 text-[11px]">🛠️ إجراء المعالجة المنفذ:</span>
+                            <p className="text-slate-800 font-semibold">{c.action_taken}</p>
+                          </div>
+                        )}
+                        {c.executor_notes && (
+                          <div className="bg-blue-50/70 p-2.5 rounded-xl border border-blue-200">
+                            <span className="font-black text-blue-900 block mb-0.5 text-[11px]">💬 ملاحظات المنفذ الميداني:</span>
+                            <p className="text-blue-950 font-semibold">{c.executor_notes}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {c.closed_feedback && (
                       <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-950 font-bold space-y-1">

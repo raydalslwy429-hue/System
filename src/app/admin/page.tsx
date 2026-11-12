@@ -168,17 +168,23 @@ export default async function AdminDashboard() {
   const closedCasesRes = await db.execute(
     canViewAll
       ? {
-          sql: `SELECT id, case_number, internal_id, department_code, department_name, location_name, nc_name, inspector_name, description, root_cause, inspector_notes, status, current_round, assigned_roles, obs_date, obs_time, created_at, closed_at, closed_feedback
-                FROM cases_master
-                WHERE status = 'closed'
-                ORDER BY case_number DESC`,
+          sql: `SELECT c.id, c.case_number, c.internal_id, c.department_code, c.department_name, c.location_name, c.nc_name, c.inspector_name, c.description, c.root_cause, c.inspector_notes, c.status, c.current_round, c.assigned_roles, c.obs_date, c.obs_time, c.created_at, c.closed_at, c.closed_feedback,
+                       e.action_taken, e.notes as executor_notes, e.executor_name
+                FROM cases_master c
+                LEFT JOIN case_executions e ON c.id = e.case_id AND c.current_round = e.round
+                WHERE c.status = 'closed'
+                GROUP BY c.id
+                ORDER BY c.case_number DESC`,
           args: [],
         }
       : {
-          sql: `SELECT id, case_number, internal_id, department_code, department_name, location_name, nc_name, inspector_name, description, root_cause, inspector_notes, status, current_round, assigned_roles, obs_date, obs_time, created_at, closed_at, closed_feedback
-                FROM cases_master
-                WHERE status = 'closed' AND department_code = ?
-                ORDER BY case_number DESC`,
+          sql: `SELECT c.id, c.case_number, c.internal_id, c.department_code, c.department_name, c.location_name, c.nc_name, c.inspector_name, c.description, c.root_cause, c.inspector_notes, c.status, c.current_round, c.assigned_roles, c.obs_date, c.obs_time, c.created_at, c.closed_at, c.closed_feedback,
+                       e.action_taken, e.notes as executor_notes, e.executor_name
+                FROM cases_master c
+                LEFT JOIN case_executions e ON c.id = e.case_id AND c.current_round = e.round
+                WHERE c.status = 'closed' AND c.department_code = ?
+                GROUP BY c.id
+                ORDER BY c.case_number DESC`,
           args: [userDept],
         }
   );
