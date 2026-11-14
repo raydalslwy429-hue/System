@@ -14,8 +14,6 @@ namespace AlMaraseem.Desktop
         private Label lblSubtitle;
         private Label lblStatus;
         private ProgressBar progressBar;
-        private System.Windows.Forms.Timer timer;
-        private Process serverProcess = null;
         private string projectRoot = "";
         private int checkCount = 0;
 
@@ -28,14 +26,14 @@ namespace AlMaraseem.Desktop
 
         private void InitializeComponent()
         {
-            this.Text = "مطاعم المراسيم - منظومة حوكمة الجودة";
-            this.Size = new Size(540, 290);
+            this.Text = "مطاعم المراسيم - حوكمة الجودة";
+            this.Size = new Size(520, 270);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.None;
-            this.BackColor = Color.FromArgb(28, 18, 16); // #1C1210
+            this.BackColor = Color.FromArgb(27, 17, 17); // #1B1111 AlMaraseem Deep Burgundy
             this.TopMost = true;
 
-            // Paint Gold Border
+            // Paint Gold Border (#D49A3D)
             this.Paint += (s, e) =>
             {
                 using (Pen goldPen = new Pen(Color.FromArgb(212, 154, 61), 3))
@@ -46,11 +44,11 @@ namespace AlMaraseem.Desktop
 
             lblTitle = new Label();
             lblTitle.Text = "مطاعم المراسيم - AL-MARASEEM";
-            lblTitle.Font = new Font("Segoe UI", 16, FontStyle.Bold);
-            lblTitle.ForeColor = Color.FromArgb(255, 194, 23); // #FFC217
+            lblTitle.Font = new Font("Segoe UI", 15, FontStyle.Bold);
+            lblTitle.ForeColor = Color.FromArgb(255, 194, 23); // #FFC217 Gold
             lblTitle.TextAlign = ContentAlignment.MiddleCenter;
-            lblTitle.Size = new Size(500, 40);
-            lblTitle.Location = new Point(20, 35);
+            lblTitle.Size = new Size(480, 36);
+            lblTitle.Location = new Point(20, 30);
             this.Controls.Add(lblTitle);
 
             lblSubtitle = new Label();
@@ -58,51 +56,57 @@ namespace AlMaraseem.Desktop
             lblSubtitle.Font = new Font("Segoe UI", 10, FontStyle.Regular);
             lblSubtitle.ForeColor = Color.FromArgb(240, 220, 190);
             lblSubtitle.TextAlign = ContentAlignment.MiddleCenter;
-            lblSubtitle.Size = new Size(500, 25);
-            lblSubtitle.Location = new Point(20, 80);
+            lblSubtitle.Size = new Size(480, 25);
+            lblSubtitle.Location = new Point(20, 72);
             this.Controls.Add(lblSubtitle);
 
             progressBar = new ProgressBar();
             progressBar.Style = ProgressBarStyle.Marquee;
             progressBar.MarqueeAnimationSpeed = 30;
-            progressBar.Size = new Size(460, 12);
-            progressBar.Location = new Point(40, 140);
+            progressBar.Size = new Size(440, 10);
+            progressBar.Location = new Point(40, 130);
             this.Controls.Add(progressBar);
 
             lblStatus = new Label();
-            lblStatus.Text = "جاري تهيئة بيئة العمل والاتصال بالنظام...";
+            lblStatus.Text = "جاري التحقق من جاهزية النظام والاتصال بالخادم...";
             lblStatus.Font = new Font("Segoe UI", 9, FontStyle.Regular);
-            lblStatus.ForeColor = Color.FromArgb(200, 200, 200);
+            lblStatus.ForeColor = Color.FromArgb(210, 210, 210);
             lblStatus.TextAlign = ContentAlignment.MiddleCenter;
-            lblStatus.Size = new Size(500, 25);
-            lblStatus.Location = new Point(20, 170);
+            lblStatus.Size = new Size(480, 25);
+            lblStatus.Location = new Point(20, 155);
             this.Controls.Add(lblStatus);
 
             Label lblFooter = new Label();
-            lblFooter.Text = "الإصدار المكتبي المعتمد v2.0 - بيئة العمل المحلية والسحابية";
+            lblFooter.Text = "الإصدار المكتبي v2.0 - بيئة العمل المحلية والسحابية";
             lblFooter.Font = new Font("Segoe UI", 8, FontStyle.Italic);
-            lblFooter.ForeColor = Color.FromArgb(140, 120, 110);
+            lblFooter.ForeColor = Color.FromArgb(150, 130, 120);
             lblFooter.TextAlign = ContentAlignment.MiddleCenter;
-            lblFooter.Size = new Size(500, 20);
-            lblFooter.Location = new Point(20, 245);
+            lblFooter.Size = new Size(480, 20);
+            lblFooter.Location = new Point(20, 225);
             this.Controls.Add(lblFooter);
         }
 
         private void DetermineProjectRoot()
         {
             string current = AppDomain.CurrentDomain.BaseDirectory;
-            // Check if running inside Releases/ folder
+            // 1. Check parent (if running from Releases/ folder)
             if (File.Exists(Path.Combine(current, "..", "package.json")))
             {
                 projectRoot = Path.GetFullPath(Path.Combine(current, ".."));
             }
+            // 2. Check current directory
             else if (File.Exists(Path.Combine(current, "package.json")))
             {
                 projectRoot = Path.GetFullPath(current);
             }
-            else
+            // 3. Fallback to known installed directory
+            else if (Directory.Exists(@"C:\Users\مطعم المراسيم\Downloads\مجلد جديد (5)\marasim_app_latest_ready"))
             {
                 projectRoot = @"C:\Users\مطعم المراسيم\Downloads\مجلد جديد (5)\marasim_app_latest_ready";
+            }
+            else
+            {
+                projectRoot = current;
             }
         }
 
@@ -111,7 +115,7 @@ namespace AlMaraseem.Desktop
             try
             {
                 HttpWebRequest req = (HttpWebRequest)WebRequest.Create("http://localhost:3000/login");
-                req.Timeout = 1200;
+                req.Timeout = 2500;
                 req.Method = "GET";
                 using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
                 {
@@ -128,21 +132,25 @@ namespace AlMaraseem.Desktop
         {
             new Thread(() =>
             {
+                // Check if server is already running
                 if (!IsServerResponsive())
                 {
-                    UpdateStatus("جاري تشغيل خادم المنظومة المحلي...");
+                    UpdateStatus("جاري تشغيل خادم المنظومة المحلي في الخلفية...");
                     try
                     {
+                        string npmPath = @"C:\Program Files\nodejs\npm.cmd";
+                        if (!File.Exists(npmPath)) npmPath = "npm.cmd";
+
                         ProcessStartInfo psi = new ProcessStartInfo();
-                        psi.FileName = "cmd.exe";
-                        // Start Next.js production or dev server
-                        string startCmd = "npm run dev";
-                        psi.Arguments = "/c " + startCmd;
+                        psi.FileName = npmPath;
+                        // Use production start if built, otherwise dev
+                        bool hasBuild = Directory.Exists(Path.Combine(projectRoot, ".next"));
+                        psi.Arguments = hasBuild ? "run start" : "run dev";
                         psi.WorkingDirectory = projectRoot;
                         psi.WindowStyle = ProcessWindowStyle.Hidden;
                         psi.CreateNoWindow = true;
-                        psi.UseShellExecute = true;
-                        serverProcess = Process.Start(psi);
+                        psi.UseShellExecute = false;
+                        Process.Start(psi);
                     }
                     catch (Exception ex)
                     {
@@ -150,22 +158,29 @@ namespace AlMaraseem.Desktop
                     }
                 }
 
-                // Poll until server is ready
+                // Poll until server is ready (max 30 seconds)
                 while (!IsServerResponsive() && checkCount < 30)
                 {
                     checkCount++;
                     Thread.Sleep(1000);
-                    UpdateStatus("جاري التحقق من جاهزية النظام (" + checkCount + "/30)...");
+                    UpdateStatus("جاري تشغيل المنظومة (" + checkCount + "/30)...");
                 }
 
                 UpdateStatus("تم الاتصال بنجاح! جاري فتح نافذة التطبيق...");
-                Thread.Sleep(600);
+                Thread.Sleep(500);
 
-                this.Invoke((MethodInvoker)delegate
+                if (this.IsHandleCreated)
+                {
+                    this.Invoke((MethodInvoker)delegate
+                    {
+                        LaunchAppWindow();
+                        this.Close();
+                    });
+                }
+                else
                 {
                     LaunchAppWindow();
-                    this.Close();
-                });
+                }
             }).Start();
         }
 
@@ -173,20 +188,25 @@ namespace AlMaraseem.Desktop
         {
             if (this.IsHandleCreated)
             {
-                this.Invoke((MethodInvoker)delegate
+                try
                 {
-                    lblStatus.Text = message;
-                });
+                    this.Invoke((MethodInvoker)delegate
+                    {
+                        lblStatus.Text = message;
+                    });
+                }
+                catch { }
             }
         }
 
         private void LaunchAppWindow()
         {
-            string url = "http://localhost:3000";
+            string url = "http://localhost:3000/login";
 
             // Find Edge or Chrome to run in pure App-Mode (No browser toolbars, pure desktop window)
             string edgePath = @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe";
             if (!File.Exists(edgePath)) edgePath = @"C:\Program Files\Microsoft\Edge\Application\msedge.exe";
+
             string chromePath = @"C:\Program Files\Google\Chrome\Application\chrome.exe";
             if (!File.Exists(chromePath)) chromePath = @"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe";
 
@@ -197,13 +217,15 @@ namespace AlMaraseem.Desktop
                 ProcessStartInfo psi = new ProcessStartInfo();
                 psi.FileName = browserPath;
                 // Chromium --app mode turns any web app into a native borderless desktop window
-                psi.Arguments = "--app=" + url + " --window-size=1366,850";
+                psi.Arguments = "--app=\"" + url + "\" --window-size=1366,850";
                 Process.Start(psi);
             }
             else
             {
                 // Fallback to default browser
-                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+                ProcessStartInfo psi = new ProcessStartInfo(url);
+                psi.UseShellExecute = true;
+                Process.Start(psi);
             }
         }
 

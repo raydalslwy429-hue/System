@@ -15,4 +15,6 @@ export default async function HomePage() {
   } else {
     redirect("/field");
   }
+
+  return null;
 }
