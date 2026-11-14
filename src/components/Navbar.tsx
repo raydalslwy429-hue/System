@@ -25,24 +25,28 @@ import OutboxModal from "@/components/OutboxModal";
 import SystemModeToggle from "@/components/SystemModeToggle";
 import CreateDailyReportModal from "@/components/CreateDailyReportModal";
 import DailyReportsArchiveModal from "@/components/DailyReportsArchiveModal";
+import DataSyncHubModal from "@/components/DataSyncHubModal";
 import { getOfflineQueue, subscribeToQueue } from "@/lib/offline-client";
 
-export default function Navbar({ user }: { user: UserSession }) {
+export default function Navbar({
+  user,
+  userPermissions,
+}: {
+  user: UserSession;
+  userPermissions: { can_view: string; features: Record<string, string> };
+}) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [showChangePin, setShowChangePin] = useState(false);
   const [showOutbox, setShowOutbox] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showDailyReportModal, setShowDailyReportModal] = useState(false);
   const [showDailyArchiveModal, setShowDailyArchiveModal] = useState(false);
+  const [showDataSyncModal, setShowDataSyncModal] = useState(false);
   const [outboxCount, setOutboxCount] = useState(0);
   const [isOnline, setIsOnline] = useState(true);
 
-  // Check Daily Report Permission: Super Admin / General Admin always have it;
-  // Other users have it unless explicitly disabled (can_create_daily_report === 0).
-  const canCreateDailyReport =
-    user.role === "super_admin" ||
-    user.role === "general_admin" ||
-    user.can_create_daily_report !== 0;
+  const hasFeature = (key: string) => ["full", "exclusive", "dept_only"].includes(userPermissions.features[key]);
+  const canCreateDailyReport = hasFeature("create_daily_report");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -140,7 +144,7 @@ export default function Navbar({ user }: { user: UserSession }) {
 
           {/* Center Section: Interactive System Runtime Mode Toggle & Create Daily Report */}
           <div className="flex items-center gap-3">
-            <SystemModeToggle variant="navbar" />
+            {hasFeature("manage_sync") && <SystemModeToggle variant="navbar" />}
 
             {/* Daily Report Button - Governed by user permission */}
             {canCreateDailyReport && (
@@ -161,6 +165,7 @@ export default function Navbar({ user }: { user: UserSession }) {
             
             {/* Outbox Badge Shortcut */}
             <button
+              hidden={!hasFeature("offline_outbox")}
               onClick={() => setShowOutbox(true)}
               className={`p-2 rounded-xl border text-xs font-black transition-all flex items-center gap-1.5 ${
                 outboxCount > 0
@@ -252,8 +257,10 @@ export default function Navbar({ user }: { user: UserSession }) {
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         user={user}
+        userPermissions={userPermissions}
         onOpenChangePin={() => setShowChangePin(true)}
         onOpenOutbox={() => setShowOutbox(true)}
+        onOpenSyncModal={() => setShowDataSyncModal(true)}
         onOpenDailyReport={() => setShowDailyReportModal(true)}
         onOpenDailyArchive={() => setShowDailyArchiveModal(true)}
         onSelectMenu={handleSelectMenu}
@@ -300,7 +307,10 @@ export default function Navbar({ user }: { user: UserSession }) {
           setShowDailyReportModal(true);
         }}
         canCreateReport={canCreateDailyReport}
+        canExportReports={hasFeature("export_excel")}
       />
+
+      <DataSyncHubModal isOpen={showDataSyncModal} onClose={() => setShowDataSyncModal(false)} />
     </>
   );
 }

@@ -21,6 +21,7 @@ export interface UserSession {
   custom_role_name?: string | null;
   can_export_excel?: number;
   can_create_daily_report?: number;
+  can_view_daily_archive?: number;
 }
 
 export async function createSession(user: UserSession) {
@@ -77,8 +78,8 @@ export async function authenticateWithCredentials(
   // Look up user by user_number (if numeric) or full_name
   const isNumeric = /^\d+$/.test(cleanId);
   const sql = isNumeric
-    ? "SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, can_export_excel, can_create_daily_report, custom_role_id, custom_role_name FROM users WHERE user_number = ? OR pin_code = ?"
-    : "SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, can_export_excel, can_create_daily_report, custom_role_id, custom_role_name FROM users WHERE full_name = ?";
+    ? "SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, can_export_excel, can_create_daily_report, COALESCE(can_view_daily_archive, 0) as can_view_daily_archive, custom_role_id, custom_role_name FROM users WHERE user_number = ? OR pin_code = ?"
+    : "SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, can_export_excel, can_create_daily_report, COALESCE(can_view_daily_archive, 0) as can_view_daily_archive, custom_role_id, custom_role_name FROM users WHERE full_name = ?";
   
   const args = isNumeric ? [parseInt(cleanId, 10), cleanPin] : [cleanId];
 
@@ -116,6 +117,7 @@ export async function authenticateWithCredentials(
     custom_role_name: matchedUser.custom_role_name ? String(matchedUser.custom_role_name) : null,
     can_export_excel: matchedUser.can_export_excel ? Number(matchedUser.can_export_excel) : 0,
     can_create_daily_report: matchedUser.can_create_daily_report !== undefined ? Number(matchedUser.can_create_daily_report) : 1,
+    can_view_daily_archive: matchedUser.can_view_daily_archive ? Number(matchedUser.can_view_daily_archive) : 0,
   };
 
   await createSession(user);
@@ -129,7 +131,7 @@ export async function authenticateWithPin(pin: string): Promise<{ success: boole
   }
 
   const res = await db.execute({
-    sql: "SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, can_export_excel, can_create_daily_report, custom_role_id, custom_role_name FROM users WHERE pin_code = ?",
+    sql: "SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, can_export_excel, can_create_daily_report, COALESCE(can_view_daily_archive, 0) as can_view_daily_archive, custom_role_id, custom_role_name FROM users WHERE pin_code = ?",
     args: [cleanPin],
   });
 
@@ -155,6 +157,7 @@ export async function authenticateWithPin(pin: string): Promise<{ success: boole
     custom_role_name: row.custom_role_name ? String(row.custom_role_name) : null,
     can_export_excel: row.can_export_excel ? Number(row.can_export_excel) : 0,
     can_create_daily_report: row.can_create_daily_report !== undefined ? Number(row.can_create_daily_report) : 1,
+    can_view_daily_archive: row.can_view_daily_archive ? Number(row.can_view_daily_archive) : 0,
   };
 
   await createSession(user);

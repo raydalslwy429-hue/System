@@ -2,13 +2,21 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, getPersistedDatabaseMode } from "@/lib/db";
 import { generateExcelWorkbookXML, ExcelColumn } from "@/lib/excel-helper";
 import { authenticateWithPin, authenticateWithCredentials, destroySession, getSession, UserSession } from "@/lib/auth";
 
 function isAuthorizedAdmin(session: any): session is UserSession {
   if (!session) return false;
   return session.role === "admin" || session.role === "super_admin" || session.role === "general_admin";
+}
+
+async function hasFeaturePermission(session: UserSession | null, key: string): Promise<boolean> {
+  if (!session) return false;
+  if (session.role === "super_admin" || session.role === "general_admin") return true;
+  const level = (await getUserEffectivePermissions(session)).features[key];
+  if (["full", "exclusive"].includes(level)) return true;
+  return level === "dept_only" && !key.startsWith("manage_") && key !== "delete_cases";
 }
 
 export interface RolePermissions {
@@ -18,9 +26,18 @@ export interface RolePermissions {
   can_review: "full" | "dept_only" | "none";
   can_close: "full" | "dept_only" | "none";
   can_delete: "full" | "none";
+  features: Record<string, string>;
+}
+
+function resolveRolePermission(parsed: Record<string, any>, key: string, alias: string, fallback: string, preferAlias = false) {
+  const value = preferAlias ? (parsed[alias] ?? parsed[key]) : (parsed[key] ?? parsed[alias]);
+  if (value === "view_only") return "none";
+  return value === "full" || value === "dept_only" || value === "none" ? value : fallback;
 }
 
 export async function getUserEffectivePermissions(session: UserSession | null): Promise<RolePermissions> {
+  const emptyFeatures: Record<string, string> = {};
+  const featureKeys = ["inspect_create", "inspect_offline", "inspect_typeahead", "inspect_view_own", "offline_outbox", "change_own_pin", "view_open_cases", "view_in_progress_cases", "view_review_cases", "view_closed_cases", "view_all_cases", "view_executor_directory", "triage_assign", "triage_direct_user", "triage_curated", "additional_assignment", "write_in_progress_note", "close_in_progress_case", "field_execute", "field_feedback", "review_approve", "review_round_bump", "delete_cases", "inspect_secret_notes", "manage_structure", "manage_roles", "manage_users", "manage_sync", "import_excel", "export_excel", "print_pdf", "manage_forms", "create_daily_report", "view_daily_archive"];
   if (!session) {
     return {
       can_view: "none",
@@ -29,6 +46,7 @@ export async function getUserEffectivePermissions(session: UserSession | null): 
       can_review: "none",
       can_close: "none",
       can_delete: "none",
+      features: emptyFeatures,
     };
   }
 
@@ -41,79 +59,72 @@ export async function getUserEffectivePermissions(session: UserSession | null): 
       can_review: "full",
       can_close: "full",
       can_delete: "full",
+      features: Object.fromEntries(featureKeys.map((key) => [key, "full"])),
     };
   }
 
-  // Check custom role permissions if assigned
-  if (session.custom_role_id) {
-    try {
-      const crRes = await db.execute({
-        sql: "SELECT permissions_json FROM custom_roles WHERE id = ?",
-        args: [session.custom_role_id],
-      });
-      if (crRes.rows.length > 0 && crRes.rows[0].permissions_json) {
-        const parsed = JSON.parse(String(crRes.rows[0].permissions_json));
-        return {
-          can_view: parsed.can_view || (session.role === "admin" ? "dept_only" : "none"),
-          can_create: parsed.can_create || (session.role === "inspector" ? "full" : "none"),
-          can_assign: parsed.can_assign || (session.role === "admin" ? "dept_only" : "none"),
-          can_review: parsed.can_review || (session.role === "admin" ? "dept_only" : "none"),
-          can_close: parsed.can_close || (session.role === "admin" ? "dept_only" : "none"),
-          can_delete: parsed.can_delete === "full" ? "full" : "none",
-        };
-      }
-    } catch (e) {}
-  }
-
-  // Check matrix table by base role
+  let parsed: Record<string, any> | null = null;
   try {
-    const matrixRes = await db.execute({
-      sql: "SELECT permissions_json FROM role_permissions_matrix WHERE role_code = ?",
-      args: [session.role],
-    });
-    if (matrixRes.rows.length > 0 && matrixRes.rows[0].permissions_json) {
-      const parsed = JSON.parse(String(matrixRes.rows[0].permissions_json));
-      return {
-        can_view: parsed.can_view || (session.role === "admin" ? "dept_only" : "none"),
-        can_create: parsed.can_create || (session.role === "inspector" ? "full" : "none"),
-        can_assign: parsed.can_assign || (session.role === "admin" ? "dept_only" : "none"),
-        can_review: parsed.can_review || (session.role === "admin" ? "dept_only" : "none"),
-        can_close: parsed.can_close || (session.role === "admin" ? "dept_only" : "none"),
-        can_delete: "none",
-      };
+    if (session.custom_role_id) {
+      const roleResult = await db.execute({ sql: "SELECT permissions_json FROM custom_roles WHERE id = ?", args: [session.custom_role_id] });
+      if (roleResult.rows[0]?.permissions_json) parsed = JSON.parse(String(roleResult.rows[0].permissions_json));
     }
-  } catch (e) {}
+    if (!parsed) {
+      const matrixResult = await db.execute({ sql: "SELECT permissions_json FROM role_permissions_matrix WHERE role_code = ?", args: [session.role] });
+      if (matrixResult.rows[0]?.permissions_json) parsed = JSON.parse(String(matrixResult.rows[0].permissions_json));
+    }
+  } catch {}
 
-  // Defaults:
-  // Admin: can view, assign, review, close ONLY for their own department!
+  const defaults = session.role === "admin"
+    ? { can_view: "dept_only", can_create: "dept_only", can_assign: "dept_only", can_review: "dept_only", can_close: "dept_only", can_delete: "none" }
+    : session.role === "inspector"
+      ? { can_view: "dept_only", can_create: "full", can_assign: "none", can_review: "none", can_close: "none", can_delete: "none" }
+      : { can_view: "none", can_create: "none", can_assign: "none", can_review: "none", can_close: "none", can_delete: "none" };
+  if (!parsed) parsed = {};
+  const defaultFeatures: Record<string, string> = session.role === "admin"
+    ? { inspect_create: "dept_only", triage_assign: "dept_only", triage_direct_user: "dept_only", triage_curated: "dept_only", review_approve: "dept_only", review_round_bump: "dept_only" }
+    : session.role === "inspector"
+      ? { inspect_create: "full", inspect_offline: "full", inspect_typeahead: "full" }
+      : session.role === "field_agent"
+        ? { field_execute: "full", field_feedback: "full" }
+        : {};
+  if (Number(session.can_export_excel) === 1) defaultFeatures.export_excel = "full";
+  // Retain the legacy per-user switches as defaults, while allowing the role matrix
+  // to explicitly override them for every role.
+  if (session.can_create_daily_report !== 0) defaultFeatures.create_daily_report = "full";
+  if (Number(session.can_view_daily_archive) === 1) defaultFeatures.view_daily_archive = "full";
+  defaultFeatures.change_own_pin = "full";
+  if (session.role === "super_admin" || session.role === "general_admin") {
+    defaultFeatures.manage_sync = "full";
+    defaultFeatures.import_excel = "full";
+  }
+  defaultFeatures.offline_outbox = "full";
+  if (session.role === "inspector") defaultFeatures.inspect_view_own = "full";
   if (session.role === "admin") {
-    return {
-      can_view: "dept_only",
-      can_create: "dept_only",
-      can_assign: "dept_only",
-      can_review: "dept_only",
-      can_close: "dept_only",
-      can_delete: "none",
-    };
+    const assignDefault = String(parsed.triage_assign ?? parsed.can_assign ?? defaultFeatures.triage_assign ?? "none");
+    const reviewDefault = String(parsed.review_approve ?? parsed.can_close ?? defaultFeatures.review_approve ?? "none");
+    const viewDefault = String(parsed.can_view ?? defaults.can_view ?? "none");
+    defaultFeatures.view_open_cases = assignDefault;
+    defaultFeatures.view_in_progress_cases = assignDefault !== "none" ? assignDefault : String(parsed.field_execute ?? defaultFeatures.field_execute ?? "none");
+    defaultFeatures.view_review_cases = reviewDefault;
+    defaultFeatures.view_closed_cases = viewDefault;
+    defaultFeatures.view_all_cases = viewDefault;
+    defaultFeatures.view_executor_directory = assignDefault;
+    if (assignDefault !== "none") {
+      defaultFeatures.additional_assignment = assignDefault;
+      defaultFeatures.write_in_progress_note = assignDefault;
+    }
+    if (reviewDefault !== "none") defaultFeatures.close_in_progress_case = reviewDefault;
   }
-  // Inspector: can create cases, view their own department
-  if (session.role === "inspector") {
-    return {
-      can_view: "dept_only",
-      can_create: "full",
-      can_assign: "none",
-      can_review: "none",
-      can_close: "none",
-      can_delete: "none",
-    };
-  }
+  const features = Object.fromEntries(featureKeys.map((key) => [key, String(parsed?.[key] ?? defaultFeatures[key] ?? "none")]));
   return {
-    can_view: "none",
-    can_create: "none",
-    can_assign: "none",
-    can_review: "none",
-    can_close: "none",
-    can_delete: "none",
+    can_view: resolveRolePermission(parsed, "can_view", "inspect_create", defaults.can_view),
+    can_create: resolveRolePermission(parsed, "can_create", "inspect_create", defaults.can_create, true),
+    can_assign: resolveRolePermission(parsed, "can_assign", "triage_assign", defaults.can_assign, true),
+    can_review: resolveRolePermission(parsed, "can_review", "review_approve", defaults.can_review, true),
+    can_close: resolveRolePermission(parsed, "can_close", "review_approve", defaults.can_close, true),
+    can_delete: ["full", "exclusive"].includes(parsed.can_delete ?? parsed.delete_cases) ? "full" : "none",
+    features,
   };
 }
 
@@ -160,7 +171,7 @@ export async function createInspectionAction(formDataOrPlain: FormData | any) {
     return { success: false, error: "يرجى تسجيل الدخول أولاً" };
   }
   const perms = await getUserEffectivePermissions(session);
-  if (session.role !== "inspector" && !isAuthorizedAdmin(session) && perms.can_create === "none") {
+  if (perms.can_create === "none") {
     return { success: false, error: "غير مصرح لك بتسجيل حالة عدم مطابقة" };
   }
 
@@ -379,18 +390,19 @@ export async function assignAdditionalUsersAction(
 ) {
   const session = await getSession();
   if (!session) return { success: false, error: "يرجى تسجيل الدخول أولاً" };
-
-  const perms = await getUserEffectivePermissions(session);
-  if (perms.can_assign === "none") {
-    return { success: false, error: "ليس لديك صلاحية إسناد أو تكليف البلاغات" };
+  if (!(await hasFeaturePermission(session, "additional_assignment"))) {
+    return { success: false, error: "لا تملك صلاحية إسناد منفذ إضافي أثناء التنفيذ" };
   }
+
+  const permissions = await getUserEffectivePermissions(session);
+  const additionalAssignmentLevel = permissions.features.additional_assignment;
 
   if (!targetUsers || targetUsers.length === 0) {
     return { success: false, error: "يرجى اختيار موظف إضافي واحد على الأقل" };
   }
 
   const caseRes = await db.execute({
-    sql: "SELECT case_number, current_round, department_code, assigned_roles FROM cases_master WHERE id = ?",
+    sql: "SELECT case_number, current_round, department_code, assigned_roles, status FROM cases_master WHERE id = ?",
     args: [caseId],
   });
   if (caseRes.rows.length === 0) return { success: false, error: "الحالة غير موجودة" };
@@ -399,17 +411,36 @@ export async function assignAdditionalUsersAction(
   const caseNumber = Number(caseRow.case_number);
   const round = Number(caseRow.current_round);
   const currentAssignedRoles = String(caseRow.assigned_roles || "");
+  const caseDept = String(caseRow.department_code || "");
+  if (!["assigned", "in_progress", "pending_review"].includes(String(caseRow.status || ""))) {
+    return { success: false, error: "الإسناد الإضافي متاح للحالات قيد التنفيذ فقط" };
+  }
+  if (additionalAssignmentLevel === "dept_only" && caseDept !== session.department_code) {
+    return { success: false, error: "صلاحية الإسناد الإضافي محصورة بمنفذي إدارتك" };
+  }
 
   // Fetch departments mapping
-  const usersRes = await db.execute("SELECT department_code, department_name FROM users");
+  const usersRes = await db.execute("SELECT id, full_name, department_code, department_name FROM users WHERE status = 'active'");
   const deptMap: Record<string, string> = {};
+  const userMap = new Map<number, { full_name: string; department_code: string }>();
   usersRes.rows.forEach((r) => {
     deptMap[String(r.department_code)] = String(r.department_name);
+    userMap.set(Number(r.id), { full_name: String(r.full_name), department_code: String(r.department_code || "") });
   });
+
+  const resolvedTargets: Array<{ id: number; name: string; deptCode: string }> = [];
+  for (const target of targetUsers) {
+    const actualUser = userMap.get(Number(target.id));
+    if (!actualUser) return { success: false, error: "أحد المنفذين المحددين غير موجود أو غير نشط" };
+    if (additionalAssignmentLevel === "dept_only" && actualUser.department_code !== session.department_code) {
+      return { success: false, error: "صلاحية الإسناد الإضافي محصورة بمنفذي إدارتك" };
+    }
+    resolvedTargets.push({ id: Number(target.id), name: actualUser.full_name, deptCode: actualUser.department_code });
+  }
 
   const newlyAssignedNames: string[] = [];
 
-  for (const u of targetUsers) {
+  for (const u of resolvedTargets) {
     const asgId = `ASG-${caseNumber}-R${round}-U${u.id}`;
     // Insert new assignment row for this user (or update if existed previously in this round)
     await db.execute({
@@ -469,17 +500,24 @@ export async function assignAdditionalUsersAction(
 // 📝 WRITE NOTE / DIRECTIVE TO IN-PROGRESS EXECUTORS (كتابة ملاحظة أو تنبيه تظهر مباشرة للمنفذين)
 export async function addInProgressNoteAction(caseId: number, note: string) {
   const session = await getSession();
-  if (!session) return { success: false, error: "يرجى تسجيل الدخول أولاً" };
+  if (!session || !isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "write_in_progress_note"))) {
+    return { success: false, error: "لا تملك صلاحية كتابة ملاحظة للمنفذين أثناء التنفيذ" };
+  }
 
   if (!note || !note.trim()) {
     return { success: false, error: "يرجى كتابة نص الملاحظة أو التنبيه للمنفذين" };
   }
 
   const caseRes = await db.execute({
-    sql: "SELECT case_number, current_round FROM cases_master WHERE id = ?",
+    sql: "SELECT case_number, current_round, department_code FROM cases_master WHERE id = ?",
     args: [caseId],
   });
   if (caseRes.rows.length === 0) return { success: false, error: "الحالة غير موجودة" };
+
+  const permissions = await getUserEffectivePermissions(session);
+  if (permissions.features.write_in_progress_note === "dept_only" && String(caseRes.rows[0].department_code || "") !== session.department_code) {
+    return { success: false, error: "صلاحية الملاحظات محصورة بحالات إدارتك" };
+  }
 
   const caseNumber = Number(caseRes.rows[0].case_number);
   const round = Number(caseRes.rows[0].current_round);
@@ -530,7 +568,7 @@ export async function addInProgressNoteAction(caseId: number, note: string) {
 
 export async function submitExecutionAction(caseId: number, asgId: string, actionTaken: string, notes?: string) {
   const session = await getSession();
-  if (!session || (session.role !== "field_agent" && !isAuthorizedAdmin(session))) {
+  if (!session || !(await hasFeaturePermission(session, "field_execute"))) {
     return { success: false, error: "صلاحية التنفيذ الميداني محصورة بالمنفذين المكلفين" };
   }
 
@@ -682,6 +720,7 @@ export async function reassignTaskAction(
   if (perms.can_review === "none") {
     return { success: false, error: "ليس لديك صلاحية مراجعة وإعادة إسناد المهام" };
   }
+  if (!(await hasFeaturePermission(session, "review_round_bump"))) return { success: false, error: "لا تملك صلاحية إعادة المهمة للاستكمال" };
 
   if (!reassignNotes || reassignNotes.trim() === "") {
     return { success: false, error: "يرجى كتابة ملاحظات وتوجيهات استكمال المهمة للمنفذين" };
@@ -805,9 +844,6 @@ export async function closeCaseEntirelyAction(caseId: number, closureNotes: stri
   }
 
   const perms = await getUserEffectivePermissions(session);
-  if (perms.can_close === "none") {
-    return { success: false, error: "ليس لديك صلاحية إغلاق البلاغات نهائياً" };
-  }
 
   if (!closureNotes || closureNotes.trim() === "") {
     return {
@@ -817,14 +853,25 @@ export async function closeCaseEntirelyAction(caseId: number, closureNotes: stri
   }
 
   const caseRes = await db.execute({
-    sql: "SELECT case_number, current_round, department_code FROM cases_master WHERE id = ?",
+    sql: "SELECT case_number, current_round, department_code, status FROM cases_master WHERE id = ?",
     args: [caseId],
   });
   if (caseRes.rows.length === 0) return { success: false, error: "الحالة غير موجودة" };
 
   const caseDept = String(caseRes.rows[0]?.department_code || "");
-  if (perms.can_close === "dept_only" && caseDept && caseDept !== session.department_code) {
-    return { success: false, error: "صلاحيتك محصورة بإغلاق بلاغات إدارتك فقط" };
+  const isActiveExecution = ["assigned", "in_progress"].includes(String(caseRes.rows[0]?.status || ""));
+  if (isActiveExecution) {
+    if (!(await hasFeaturePermission(session, "close_in_progress_case"))) {
+      return { success: false, error: "لا تملك صلاحية إغلاق المهمة وهي قيد التنفيذ" };
+    }
+    if (perms.features.close_in_progress_case === "dept_only" && caseDept && caseDept !== session.department_code) {
+      return { success: false, error: "صلاحية إغلاق المهمة محصورة بحالات إدارتك" };
+    }
+  } else {
+    if (perms.can_close === "none") return { success: false, error: "ليس لديك صلاحية إغلاق البلاغات نهائياً" };
+    if (perms.can_close === "dept_only" && caseDept && caseDept !== session.department_code) {
+      return { success: false, error: "صلاحيتك محصورة بإغلاق بلاغات إدارتك فقط" };
+    }
   }
 
   const caseNumber = Number(caseRes.rows[0].case_number);
@@ -931,7 +978,7 @@ export async function deleteCaseAction(caseId: number) {
 
 export async function createDepartmentAction(name: string, description?: string) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure"))) return { success: false, error: "تحتاج إلى صلاحية إدارة الهيكل التنظيمي" };
   if (!name.trim()) return { success: false, error: "يرجى كتابة اسم الإدارة" };
 
   const code = `dept_${Date.now()}`;
@@ -946,7 +993,7 @@ export async function createDepartmentAction(name: string, description?: string)
 
 export async function updateDepartmentAction(id: number, name: string) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure"))) return { success: false, error: "تحتاج إلى صلاحية إدارة الهيكل التنظيمي" };
   if (!name.trim()) return { success: false, error: "يرجى كتابة اسم الإدارة" };
 
   await db.execute({
@@ -960,7 +1007,7 @@ export async function updateDepartmentAction(id: number, name: string) {
 
 export async function deleteDepartmentAction(id: number) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure"))) return { success: false, error: "تحتاج إلى صلاحية إدارة الهيكل التنظيمي" };
 
   await db.execute({ sql: "DELETE FROM departments WHERE id = ?", args: [id] });
   revalidatePath("/admin");
@@ -969,7 +1016,7 @@ export async function deleteDepartmentAction(id: number) {
 
 export async function toggleDepartmentStatusAction(id: number) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure"))) return { success: false, error: "تحتاج إلى صلاحية إدارة الهيكل التنظيمي" };
 
   await db.execute({
     sql: "UPDATE departments SET status = CASE WHEN status = 'active' THEN 'disabled' ELSE 'active' END WHERE id = ?",
@@ -986,7 +1033,7 @@ export async function toggleDepartmentStatusAction(id: number) {
 
 export async function createSectionAction(deptCode: string, name: string) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure"))) return { success: false, error: "تحتاج إلى صلاحية إدارة الهيكل التنظيمي" };
   if (!deptCode || !name.trim()) return { success: false, error: "يرجى اختيار الإدارة وكتابة اسم القسم" };
 
   const code = `sec_${Date.now()}`;
@@ -1002,7 +1049,7 @@ export async function createSectionAction(deptCode: string, name: string) {
 
 export async function updateSectionAction(id: number, name: string, deptCode: string) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure"))) return { success: false, error: "تحتاج إلى صلاحية إدارة الهيكل التنظيمي" };
   if (!name.trim()) return { success: false, error: "يرجى كتابة اسم القسم" };
 
   await db.execute({
@@ -1017,7 +1064,7 @@ export async function updateSectionAction(id: number, name: string, deptCode: st
 
 export async function deleteSectionAction(id: number) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure"))) return { success: false, error: "تحتاج إلى صلاحية إدارة الهيكل التنظيمي" };
 
   await db.execute({ sql: "DELETE FROM locations WHERE id = ?", args: [id] });
   revalidatePath("/admin");
@@ -1027,7 +1074,7 @@ export async function deleteSectionAction(id: number) {
 
 export async function toggleSectionStatusAction(id: number) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure"))) return { success: false, error: "تحتاج إلى صلاحية إدارة الهيكل التنظيمي" };
 
   await db.execute({
     sql: "UPDATE locations SET status = CASE WHEN status = 'active' THEN 'disabled' ELSE 'active' END WHERE id = ?",
@@ -1052,7 +1099,7 @@ export async function createCustomRoleAction(data: {
   permissions?: Record<string, string>;
 }) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_roles"))) return { success: false, error: "تحتاج إلى صلاحية إدارة الأدوار" };
   if (!data.name?.trim()) return { success: false, error: "يرجى إدخال مسمى الدور الوظيفي" };
 
   const code = `crole_${Date.now()}`;
@@ -1078,7 +1125,7 @@ export async function createCustomRoleAction(data: {
     manage_users: "none",
     manage_forms: "none",
   };
-  const permsVal = JSON.stringify(data.permissions || defaultPerms);
+  const permsVal = JSON.stringify({ ...defaultPerms, ...(data.permissions || {}) });
 
   await db.execute({
     sql: `INSERT INTO custom_roles (
@@ -1113,13 +1160,16 @@ export async function updateCustomRoleAction(
   }
 ) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_roles"))) return { success: false, error: "تحتاج إلى صلاحية إدارة الأدوار" };
   if (!data.name?.trim()) return { success: false, error: "يرجى إدخال مسمى الدور الوظيفي" };
 
   const deptsVal = data.allowedDepartments && data.allowedDepartments.length > 0 ? data.allowedDepartments.join(",") : "all";
   const secsVal = data.allowedSections && data.allowedSections.length > 0 ? data.allowedSections.join(",") : "all";
 
   if (data.permissions) {
+    const existingPermissions = await db.execute({ sql: "SELECT permissions_json FROM custom_roles WHERE id = ?", args: [id] });
+    let previousPermissions: Record<string, string> = {};
+    try { previousPermissions = JSON.parse(String(existingPermissions.rows[0]?.permissions_json || "{}")); } catch {}
     await db.execute({
       sql: `UPDATE custom_roles SET 
         name = ?, category = ?, role_type = ?, department_code = ?, allowed_departments = ?, allowed_sections = ?, description = ?, permissions_json = ?
@@ -1132,7 +1182,7 @@ export async function updateCustomRoleAction(
         deptsVal,
         secsVal,
         data.description?.trim() || null,
-        JSON.stringify(data.permissions),
+        JSON.stringify({ ...previousPermissions, ...data.permissions }),
         id,
       ],
     });
@@ -1164,8 +1214,13 @@ export async function updateRolePermissionsAction(
 ) {
   const session = await getSession();
   if (!session) return { success: false, error: "غير مصرح" };
-  if (session.role !== "super_admin" && session.role !== "general_admin") {
+  if (getPersistedDatabaseMode() !== "local") return { success: false, error: "تعديل الصلاحيات متاح في وضع قاعدة البيانات المحلية فقط" };
+  const effectivePermissions = await getUserEffectivePermissions(session);
+  if (session.role !== "super_admin" && session.role !== "general_admin" && effectivePermissions.features.manage_roles !== "full") {
     return { success: false, error: "صلاحية تعديل مصفوفة الصلاحيات محصورة بمدير المنظومة" };
+  }
+  if (roleCode === "super_admin" || roleCode === "general_admin") {
+    return { success: false, error: "صلاحيات إدارة النظام العليا ثابتة ولا يمكن تعديلها من المصفوفة" };
   }
 
   const permsStr = JSON.stringify(permissions);
@@ -1189,7 +1244,7 @@ export async function updateRolePermissionsAction(
 
 export async function deleteCustomRoleAction(id: number) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_roles"))) return { success: false, error: "تحتاج إلى صلاحية إدارة الأدوار" };
 
   await db.execute({ sql: "DELETE FROM custom_roles WHERE id = ?", args: [id] });
   revalidatePath("/admin");
@@ -1198,7 +1253,7 @@ export async function deleteCustomRoleAction(id: number) {
 
 export async function toggleCustomRoleStatusAction(id: number) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_roles"))) return { success: false, error: "تحتاج إلى صلاحية إدارة الأدوار" };
 
   await db.execute({
     sql: "UPDATE custom_roles SET status = CASE WHEN status = 'active' THEN 'disabled' ELSE 'active' END WHERE id = ?",
@@ -1221,7 +1276,7 @@ export async function createCategoryAction(
   description?: string
 ) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure"))) return { success: false, error: "تحتاج إلى صلاحية إدارة دليل الحالات" };
   if (!name || !name.trim()) return { success: false, error: "يرجى إدخال اسم حالة عدم المطابقة" };
 
   const code = `nc_${Date.now()}`;
@@ -1259,7 +1314,7 @@ export async function updateCategoryAction(
   description?: string
 ) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure"))) return { success: false, error: "تحتاج إلى صلاحية إدارة دليل الحالات" };
   if (!name || !name.trim()) return { success: false, error: "يرجى إدخال اسم حالة عدم المطابقة" };
 
   const deptsVal = Array.isArray(departmentCode)
@@ -1290,7 +1345,7 @@ export async function updateCategoryAction(
 
 export async function deleteCategoryAction(id: number) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure"))) return { success: false, error: "تحتاج إلى صلاحية إدارة دليل الحالات" };
 
   await db.execute({ sql: "DELETE FROM categories WHERE id = ?", args: [id] });
   revalidatePath("/admin");
@@ -1300,7 +1355,7 @@ export async function deleteCategoryAction(id: number) {
 
 export async function toggleCategoryStatusAction(id: number) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure"))) return { success: false, error: "تحتاج إلى صلاحية إدارة دليل الحالات" };
 
   await db.execute({
     sql: "UPDATE categories SET status = CASE WHEN status = 'active' THEN 'disabled' ELSE 'active' END WHERE id = ?",
@@ -1318,12 +1373,13 @@ export async function toggleCategoryStatusAction(id: number) {
 
 export async function createUserAction(formData: FormData) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_users"))) return { success: false, error: "تحتاج إلى صلاحية إدارة المستخدمين" };
 
   const fullName = String(formData.get("full_name") || "").trim();
   const pinCode = String(formData.get("pin_code") || "").trim();
   const customRoleIdStr = String(formData.get("custom_role_id") || "").trim();
   const canExportExcel = formData.get("can_export_excel") === "1" ? 1 : 0;
+  const canViewDailyArchive = formData.get("can_view_daily_archive") === "1" ? 1 : 0;
 
   if (!fullName || !pinCode) {
     return { success: false, error: "يرجى تعبئة الحقول الإلزامية (اسم الموظف ورمز المرور)" };
@@ -1368,9 +1424,9 @@ export async function createUserAction(formData: FormData) {
   const nextUserNumber = Number(maxNumRes.rows[0]?.max_num || 100) + 1;
 
   await db.execute({
-    sql: `INSERT INTO users (user_number, full_name, pin_code, role, department_code, department_name, job_title, can_export_excel, custom_role_id, custom_role_name, is_protected, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'active')`,
-    args: [nextUserNumber, fullName, pinCode, finalRole, departmentCode, deptName, customRoleName || finalRole, canExportExcel, customRoleId, customRoleName],
+    sql: `INSERT INTO users (user_number, full_name, pin_code, role, department_code, department_name, job_title, can_export_excel, can_create_daily_report, can_view_daily_archive, custom_role_id, custom_role_name, is_protected, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 0, 'active')`,
+    args: [nextUserNumber, fullName, pinCode, finalRole, departmentCode, deptName, customRoleName || finalRole, canExportExcel, canViewDailyArchive, customRoleId, customRoleName],
   });
 
   revalidatePath("/admin");
@@ -1379,11 +1435,12 @@ export async function createUserAction(formData: FormData) {
 
 export async function updateUserAction(id: number, formData: FormData) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_users"))) return { success: false, error: "تحتاج إلى صلاحية إدارة المستخدمين" };
 
   const fullName = String(formData.get("full_name") || "").trim();
   const customRoleIdStr = String(formData.get("custom_role_id") || "").trim();
   const canExportExcel = formData.get("can_export_excel") === "1" ? 1 : 0;
+  const canViewDailyArchive = formData.get("can_view_daily_archive") === "1" ? 1 : 0;
   const pinCode = String(formData.get("pin_code") || "").trim();
   let departmentCode = String(formData.get("department_code") || "").trim();
 
@@ -1422,13 +1479,13 @@ export async function updateUserAction(id: number, formData: FormData) {
 
   if (pinCode && pinCode.length === 4) {
     await db.execute({
-      sql: `UPDATE users SET full_name = ?, pin_code = ?, role = ?, department_code = ?, department_name = ?, job_title = ?, can_export_excel = ?, custom_role_id = ?, custom_role_name = ? WHERE id = ? AND is_protected = 0`,
-      args: [fullName, pinCode, finalRole, departmentCode, deptName, customRoleName || finalRole, canExportExcel, customRoleId, customRoleName, id],
+      sql: `UPDATE users SET full_name = ?, pin_code = ?, role = ?, department_code = ?, department_name = ?, job_title = ?, can_export_excel = ?, can_view_daily_archive = ?, custom_role_id = ?, custom_role_name = ? WHERE id = ? AND is_protected = 0`,
+      args: [fullName, pinCode, finalRole, departmentCode, deptName, customRoleName || finalRole, canExportExcel, canViewDailyArchive, customRoleId, customRoleName, id],
     });
   } else {
     await db.execute({
-      sql: `UPDATE users SET full_name = ?, role = ?, department_code = ?, department_name = ?, job_title = ?, can_export_excel = ?, custom_role_id = ?, custom_role_name = ? WHERE id = ? AND is_protected = 0`,
-      args: [fullName, finalRole, departmentCode, deptName, customRoleName || finalRole, canExportExcel, customRoleId, customRoleName, id],
+      sql: `UPDATE users SET full_name = ?, role = ?, department_code = ?, department_name = ?, job_title = ?, can_export_excel = ?, can_view_daily_archive = ?, custom_role_id = ?, custom_role_name = ? WHERE id = ? AND is_protected = 0`,
+      args: [fullName, finalRole, departmentCode, deptName, customRoleName || finalRole, canExportExcel, canViewDailyArchive, customRoleId, customRoleName, id],
     });
   }
 
@@ -1438,7 +1495,7 @@ export async function updateUserAction(id: number, formData: FormData) {
 
 export async function deleteUserAction(id: number) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_users"))) return { success: false, error: "تحتاج إلى صلاحية إدارة المستخدمين" };
 
   const userRes = await db.execute({ sql: "SELECT pin_code, is_protected FROM users WHERE id = ?", args: [id] });
   if (userRes.rows.length === 0) return { success: false, error: "المستخدم غير موجود" };
@@ -1458,7 +1515,7 @@ export async function deleteUserAction(id: number) {
 
 export async function toggleUserStatusAction(id: number) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_users"))) return { success: false, error: "تحتاج إلى صلاحية إدارة المستخدمين" };
 
   const userRes = await db.execute({ sql: "SELECT is_protected FROM users WHERE id = ?", args: [id] });
   if (userRes.rows.length > 0 && Number(userRes.rows[0].is_protected) === 1) {
@@ -1476,7 +1533,7 @@ export async function toggleUserStatusAction(id: number) {
 
 export async function toggleUserExcelAction(id: number) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_users"))) return { success: false, error: "تحتاج إلى صلاحية إدارة المستخدمين" };
 
   await db.execute({
     sql: "UPDATE users SET can_export_excel = CASE WHEN can_export_excel = 1 THEN 0 ELSE 1 END WHERE id = ?",
@@ -1489,7 +1546,7 @@ export async function toggleUserExcelAction(id: number) {
 
 export async function changeUserPinAction(userId: number, newPin: string) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_users"))) return { success: false, error: "تحتاج إلى صلاحية إدارة المستخدمين" };
 
   if (!newPin || newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
     return { success: false, error: "رمز المرور الجديد يجب أن يتكون من 4 أرقام" };
@@ -1506,7 +1563,7 @@ export async function changeUserPinAction(userId: number, newPin: string) {
 
 export async function changeMyPinAction(currentPin: string, newPin: string) {
   const session = await getSession();
-  if (!session) return { success: false, error: "يرجى تسجيل الدخول أولاً" };
+  if (!session || !(await hasFeaturePermission(session, "change_own_pin"))) return { success: false, error: "لا تملك صلاحية تغيير رمز المرور الشخصي" };
 
   if (session.pin_code !== currentPin) {
     return { success: false, error: "رمز المرور الحالي غير صحيح" };
@@ -1589,8 +1646,9 @@ export async function resetDatabaseAction(adminPin: string, resetScope: "cases_o
 
 // Bulk Import Actions for Excel
 export async function bulkImportDepartmentsAction(rows: Array<{ code: string; name: string; status?: string }>) {
+  if (getPersistedDatabaseMode() !== "local") return { success: false, error: "الاستيراد متاح في وضع قاعدة البيانات المحلية فقط" };
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure")) || !(await hasFeaturePermission(session, "import_excel"))) return { success: false, error: "تحتاج إلى صلاحية إدارة الهيكل والاستيراد من Excel" };
   let count = 0;
   for (const r of rows) {
     if (!r.code || !r.name) continue;
@@ -1605,8 +1663,9 @@ export async function bulkImportDepartmentsAction(rows: Array<{ code: string; na
 }
 
 export async function bulkImportSectionsAction(rows: Array<{ code: string; name: string; department_code: string; status?: string }>) {
+  if (getPersistedDatabaseMode() !== "local") return { success: false, error: "الاستيراد متاح في وضع قاعدة البيانات المحلية فقط" };
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure")) || !(await hasFeaturePermission(session, "import_excel"))) return { success: false, error: "تحتاج إلى صلاحية إدارة الهيكل والاستيراد من Excel" };
   let count = 0;
   for (const r of rows) {
     if (!r.code || !r.name) continue;
@@ -1621,18 +1680,19 @@ export async function bulkImportSectionsAction(rows: Array<{ code: string; name:
 }
 
 export async function bulkImportUsersAction(rows: Array<{ full_name: string; pin_code: string; role: string; department_code?: string }>) {
+  if (getPersistedDatabaseMode() !== "local") return { success: false, error: "الاستيراد متاح في وضع قاعدة البيانات المحلية فقط" };
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_users")) || !(await hasFeaturePermission(session, "import_excel"))) return { success: false, error: "تحتاج إلى صلاحية إدارة المستخدمين والاستيراد من Excel" };
   let count = 0;
   for (const r of rows) {
-    if (!r.full_name || !r.pin_code) continue;
+    if (!r.full_name || !/^\d{4}$/.test(String(r.pin_code || ""))) continue;
     const deptRes = await db.execute({
       sql: "SELECT name FROM departments WHERE code = ?",
       args: [r.department_code || ""],
     });
     const deptName = String(deptRes.rows[0]?.name || "الإدارة العامة");
     await db.execute({
-      sql: "INSERT OR REPLACE INTO users (full_name, pin_code, role, department_code, department_name, is_active) VALUES (?, ?, ?, ?, ?, 1)",
+      sql: "INSERT INTO users (full_name, pin_code, role, department_code, department_name, status) VALUES (?, ?, ?, ?, ?, 'active')",
       args: [r.full_name.trim(), r.pin_code.trim(), r.role || "field_agent", r.department_code || "", deptName],
     });
     count++;
@@ -1642,8 +1702,9 @@ export async function bulkImportUsersAction(rows: Array<{ full_name: string; pin
 }
 
 export async function bulkImportCategoriesAction(rows: Array<{ code: string; name: string; severity?: string }>) {
+  if (getPersistedDatabaseMode() !== "local") return { success: false, error: "الاستيراد متاح في وضع قاعدة البيانات المحلية فقط" };
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure")) || !(await hasFeaturePermission(session, "import_excel"))) return { success: false, error: "تحتاج إلى صلاحية إدارة دليل الحالات والاستيراد من Excel" };
   let count = 0;
   for (const r of rows) {
     if (!r.code || !r.name) continue;
@@ -1658,9 +1719,23 @@ export async function bulkImportCategoriesAction(rows: Array<{ code: string; nam
 }
 
 export async function bulkImportTemplatesAction(rows: Array<{ code: string; title: string; description?: string; allowed_roles?: string }>) {
+  if (getPersistedDatabaseMode() !== "local") return { success: false, error: "الاستيراد متاح في وضع قاعدة البيانات المحلية فقط" };
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام" };
-  return { success: true, count: rows.length };
+  if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_forms")) || !(await hasFeaturePermission(session, "import_excel"))) return { success: false, error: "تحتاج إلى صلاحية إدارة النماذج والاستيراد من Excel" };
+  let count = 0;
+  for (const r of rows) {
+    if (!r.code?.trim() || !r.title?.trim()) continue;
+    await db.execute({
+      sql: `INSERT INTO forms_templates (code, title, description, allowed_roles, status)
+            VALUES (?, ?, ?, ?, 'active')
+            ON CONFLICT(code) DO UPDATE SET title = excluded.title, description = excluded.description,
+              allowed_roles = excluded.allowed_roles, status = 'active', version = COALESCE(forms_templates.version, 1) + 1`,
+      args: [r.code.trim(), r.title.trim(), r.description?.trim() || null, r.allowed_roles?.trim() || "all"],
+    });
+    count++;
+  }
+  revalidatePath("/admin");
+  return { success: true, count };
 }
 
 // ==========================================
@@ -1669,7 +1744,7 @@ export async function bulkImportTemplatesAction(rows: Array<{ code: string; titl
 
 export async function pushSystemDataAction() {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام العليا" };
+  if (!(await hasFeaturePermission(session, "manage_sync"))) return { success: false, error: "تحتاج إلى صلاحية إدارة المزامنة" };
   try {
     const { execSync } = await import("child_process");
     const path = await import("path");
@@ -1694,7 +1769,7 @@ export async function pushSystemDataAction() {
 
 export async function pullSystemDataAction() {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام العليا" };
+  if (!(await hasFeaturePermission(session, "manage_sync"))) return { success: false, error: "تحتاج إلى صلاحية إدارة المزامنة" };
   try {
     const { execSync } = await import("child_process");
     const path = await import("path");
@@ -1716,7 +1791,7 @@ export async function pullSystemDataAction() {
 
 export async function syncLocalDbAction() {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام العليا" };
+  if (!(await hasFeaturePermission(session, "manage_sync"))) return { success: false, error: "تحتاج إلى صلاحية إدارة المزامنة" };
   try {
     const { execSync } = await import("child_process");
     const path = await import("path");
@@ -1731,7 +1806,7 @@ export async function syncLocalDbAction() {
 
 export async function pushCodeToGithubAction(customMessage?: string) {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام العليا" };
+  if (!(await hasFeaturePermission(session, "manage_sync"))) return { success: false, error: "تحتاج إلى صلاحية إدارة تحديثات النظام" };
   try {
     const { execSync } = await import("child_process");
     const path = await import("path");
@@ -1756,7 +1831,7 @@ export async function pushCodeToGithubAction(customMessage?: string) {
 
 export async function pullCodeFromGithubAction() {
   const session = await getSession();
-  if (!isAuthorizedAdmin(session)) return { success: false, error: "صلاحية محصورة بإدارة النظام العليا" };
+  if (!(await hasFeaturePermission(session, "manage_sync"))) return { success: false, error: "تحتاج إلى صلاحية إدارة تحديثات النظام" };
   try {
     const { execSync } = await import("child_process");
     const path = await import("path");
@@ -1832,8 +1907,8 @@ export async function exportCasesAuditTrailToExcelAction() {
     return { success: false, error: "يجب تسجيل الدخول أولاً لتصدير التقارير" };
   }
 
-  const isAdmin = isAuthorizedAdmin(session);
-  const canExport = isAdmin || Number((session as any).can_export_excel) === 1;
+  const canExport = (session.role === "super_admin" || session.role === "general_admin") ||
+    (await hasFeaturePermission(session, "export_excel"));
 
   if (!canExport) {
     return { success: false, error: "غير مصرح لك بتصدير تقارير الإكسيل" };

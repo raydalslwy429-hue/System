@@ -10,15 +10,20 @@ const toPlain = <T,>(data: T): T => JSON.parse(JSON.stringify(data));
 export default async function AdminDashboard() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (session.role !== "admin" && session.role !== "super_admin" && session.role !== "general_admin") {
+  const userPerms = await getUserEffectivePermissions(session);
+  const canManageSystem = ["manage_structure", "manage_roles", "manage_users", "manage_forms", "print_pdf", "export_excel"].some(
+    (key) => userPerms.features[key] === "full"
+  );
+  if (session.role !== "admin" && session.role !== "super_admin" && session.role !== "general_admin" && !canManageSystem) {
     redirect("/");
   }
 
   // 0. Resolve Effective User Permissions & Department Scoping
-  const userPerms = await getUserEffectivePermissions(session);
   const isSuperAdmin = session.role === "super_admin" || session.role === "general_admin";
   const canViewAll = isSuperAdmin || userPerms.can_view === "full";
   const userDept = session.department_code;
+  const canViewFeature = (key: string) => ["full", "exclusive", "dept_only", "view_only"].includes(userPerms.features[key]);
+  const canViewFeatureAll = (key: string) => isSuperAdmin || ["full", "exclusive"].includes(userPerms.features[key]);
 
   // 1. Fetch Lookups & Structure
   const deptsRes = await db.execute("SELECT id, code, name, status, created_at FROM departments ORDER BY name ASC");
@@ -41,12 +46,14 @@ export default async function AdminDashboard() {
   const matrixRes = await db.execute("SELECT role_code, role_name, permissions_json FROM role_permissions_matrix");
   const permissionsMatrix = matrixRes.rows as unknown as any[];
 
-  // Users with user_number and daily report permission
-  const usersRes = await db.execute("SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, is_protected, can_export_excel, can_create_daily_report, custom_role_id, custom_role_name, created_at FROM users ORDER BY COALESCE(user_number, id) ASC");
+  // Users with user_number, excel, daily report and archive permissions
+  const usersRes = await db.execute("SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, is_protected, can_export_excel, can_create_daily_report, COALESCE(can_view_daily_archive, 0) as can_view_daily_archive, custom_role_id, custom_role_name, created_at FROM users ORDER BY COALESCE(user_number, id) ASC");
   const allUsers = usersRes.rows as unknown as any[];
 
+  const canListExecutors = canViewFeature("view_executor_directory") || canViewFeature("triage_assign") || canViewFeature("triage_direct_user");
+  const canListExecutorsAcrossDepartments = canViewFeatureAll("view_executor_directory") || canViewFeatureAll("triage_assign") || canViewFeatureAll("triage_direct_user");
   const fieldRoles = allUsers
-    .filter((u: any) => u.role === "field_agent" && u.status !== "disabled")
+    .filter((u: any) => u.role === "field_agent" && u.status !== "disabled" && canListExecutors && (canListExecutorsAcrossDepartments || String(u.department_code) === userDept))
     .map((r: any) => ({
       id: Number(r.id),
       user_number: r.user_number ? Number(r.user_number) : undefined,
@@ -78,7 +85,7 @@ export default async function AdminDashboard() {
 
   // 2. Fetch Cases Pending Assignment (الحالات المفتوحة) - Scoped by Department
   const pendingCasesRes = await db.execute(
-    canViewAll
+    canViewFeatureAll("view_open_cases")
       ? {
           sql: `SELECT id, case_number, internal_id, department_code, department_name, location_code, location_name, nc_code, nc_name, inspector_name, description, root_cause, inspector_notes, obs_date, obs_time, status, current_round
                 FROM cases_master
@@ -94,11 +101,11 @@ export default async function AdminDashboard() {
           args: [userDept],
         }
   );
-  const pendingCases = pendingCasesRes.rows as unknown as any[];
+  const pendingCases = canViewFeature("view_open_cases") ? pendingCasesRes.rows as unknown as any[] : [];
 
   // 3. Fetch Cases In Progress in Field (الحالات قيد التنفيذ) - Scoped by Department
   const inProgressCasesRes = await db.execute(
-    canViewAll
+    canViewFeatureAll("view_in_progress_cases")
       ? {
           sql: `SELECT c.id, c.case_number, c.internal_id, c.department_code, c.department_name, c.location_name, c.nc_name, c.inspector_name, c.description, c.root_cause, c.inspector_notes, c.in_progress_note, c.status, c.current_round, c.assigned_roles, c.obs_date, c.obs_time, c.created_at,
                        GROUP_CONCAT(DISTINCT a.assigned_user_id) as assigned_user_ids,
@@ -122,11 +129,11 @@ export default async function AdminDashboard() {
           args: [userDept, userDept],
         }
   );
-  const inProgressCases = inProgressCasesRes.rows as unknown as any[];
+  const inProgressCases = canViewFeature("view_in_progress_cases") ? inProgressCasesRes.rows as unknown as any[] : [];
 
   // 4. Fetch Completed Field Executions Waiting for Admin Review - Scoped by Department
   const reviewRes = await db.execute(
-    canViewAll
+    canViewFeatureAll("view_review_cases")
       ? {
           sql: `SELECT 
                   e.id as exec_row_id, e.exec_id, e.case_id, e.case_number, e.assignment_id, e.round,
@@ -162,11 +169,11 @@ export default async function AdminDashboard() {
           args: [userDept, userDept],
         }
   );
-  const reviewItems = reviewRes.rows as unknown as any[];
+  const reviewItems = canViewFeature("view_review_cases") ? reviewRes.rows as unknown as any[] : [];
 
   // 5. Fetch Closed Cases (الحالات المغلقة) - Scoped by Department
   const closedCasesRes = await db.execute(
-    canViewAll
+    canViewFeatureAll("view_closed_cases")
       ? {
           sql: `SELECT c.id, c.case_number, c.internal_id, c.department_code, c.department_name, c.location_name, c.nc_name, c.inspector_name, c.description, c.root_cause, c.inspector_notes, c.status, c.current_round, c.assigned_roles, c.obs_date, c.obs_time, c.created_at, c.closed_at, c.closed_feedback,
                        e.action_taken, e.notes as executor_notes, e.executor_name
@@ -188,11 +195,11 @@ export default async function AdminDashboard() {
           args: [userDept],
         }
   );
-  const closedCases = closedCasesRes.rows as unknown as any[];
+  const closedCases = canViewFeature("view_closed_cases") ? closedCasesRes.rows as unknown as any[] : [];
 
   // 6. Fetch All Cases Master List (السجل العام) - Scoped by Department
   const allCasesRes = await db.execute(
-    canViewAll
+    canViewFeatureAll("view_all_cases")
       ? {
           sql: `SELECT 
                   c.id, c.case_number, c.internal_id, c.department_code, c.department_name, c.location_name, c.nc_name, c.inspector_name, 
@@ -211,7 +218,7 @@ export default async function AdminDashboard() {
           args: [userDept],
         }
   );
-  const allCases = allCasesRes.rows as unknown as any[];
+  const allCases = canViewFeature("view_all_cases") ? allCasesRes.rows as unknown as any[] : [];
 
   // 7. Fetch Audit Logs
   const auditRes = await db.execute(
@@ -231,7 +238,7 @@ export default async function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-[#FAF7F4] flex flex-col">
-      <Navbar user={session} />
+      <Navbar user={session} userPermissions={toPlain(userPerms)} />
 
       <main className="w-full flex-1 flex flex-col">
         <AdminManager
@@ -240,7 +247,7 @@ export default async function AdminDashboard() {
           departments={toPlain(departments)}
           sections={toPlain(sections)}
           roles={toPlain(roles)}
-          users={toPlain(allUsers)}
+          users={toPlain(canViewFeature("manage_users") ? allUsers : [])}
           fieldRoles={toPlain(fieldRoles)}
           categories={toPlain(categories)}
           locations={toPlain(locations)}

@@ -33,8 +33,10 @@ interface AppDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   user: UserSession;
+  userPermissions: { can_view: string; features: Record<string, string> };
   onOpenChangePin: () => void;
   onOpenOutbox: () => void;
+  onOpenSyncModal?: () => void;
   onOpenResetModal?: () => void;
   onOpenImportModal?: () => void;
   onOpenDailyReport?: () => void;
@@ -48,8 +50,10 @@ export default function AppDrawer({
   isOpen,
   onClose,
   user,
+  userPermissions,
   onOpenChangePin,
   onOpenOutbox,
+  onOpenSyncModal,
   onOpenResetModal,
   onOpenImportModal,
   onOpenDailyReport,
@@ -59,6 +63,9 @@ export default function AppDrawer({
   isOnline,
 }: AppDrawerProps) {
   if (!isOpen) return null;
+
+  const hasFeature = (key: string) => ["full", "exclusive", "dept_only"].includes(userPermissions.features[key]);
+  const hasViewFeature = (key: string) => hasFeature(key) || userPermissions.features[key] === "view_only";
 
   const handleItemClick = (key: string) => {
     if (onSelectMenu) onSelectMenu(key);
@@ -136,6 +143,7 @@ export default function AppDrawer({
               </span>
             </div>
             <button
+              hidden={!hasFeature("offline_outbox")}
               onClick={() => {
                 onOpenOutbox();
                 onClose();
@@ -155,20 +163,20 @@ export default function AppDrawer({
             الحساب والمزامنة
           </div>
 
-          {(user.role === "super_admin" || user.role === "general_admin") && (
-            <button
-              onClick={() => {
-                onOpenChangePin();
-                onClose();
-              }}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
-            >
-              <KeyRound className="w-4 h-4 text-[#D49A3D]" />
-              <span>الخصوصية وتغيير كلمة السر</span>
-            </button>
-          )}
+          <button
+            hidden={!hasFeature("change_own_pin")}
+            onClick={() => {
+              onOpenChangePin();
+              onClose();
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <KeyRound className="w-4 h-4 text-[#D49A3D]" />
+            <span>الخصوصية وتغيير كلمة السر</span>
+          </button>
 
           <button
+            hidden={!hasFeature("offline_outbox")}
             onClick={() => {
               onOpenOutbox();
               onClose();
@@ -186,33 +194,53 @@ export default function AppDrawer({
             )}
           </button>
 
+          <button
+            hidden={!hasFeature("manage_sync")}
+            onClick={() => {
+              if (onOpenSyncModal) {
+                onOpenSyncModal();
+                onClose();
+              } else {
+                handleItemClick("manage_sync");
+              }
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <Radio className="w-4 h-4 text-amber-300" />
+            <span>مركز المزامنة ووضع النظام</span>
+          </button>
+
           {/* Universal Section: Daily Reports */}
           <div className="text-[10px] font-black text-amber-400/80 px-2 py-1 uppercase tracking-wider">
             التقارير والعمل الميداني
           </div>
 
-          {(user.role === "super_admin" || user.role === "general_admin" || user.can_create_daily_report !== 0) && (
-            <button
-              onClick={() => {
-                if (onOpenDailyReport) onOpenDailyReport();
-                onClose();
-              }}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-amber-300 hover:text-white hover:bg-white/10 transition-colors"
-            >
-              <FileText className="w-4 h-4 text-[#FFC217]" />
-              <span>إنشاء تقرير يومي 📝</span>
-            </button>
-          )}
-
           <button
+            hidden={!hasFeature("create_daily_report")}
             onClick={() => {
-              if (onOpenDailyArchive) onOpenDailyArchive();
+              if (onOpenDailyReport) onOpenDailyReport();
               onClose();
             }}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-amber-300 hover:text-white hover:bg-white/10 transition-colors"
           >
-            <Clock className="w-4 h-4 text-amber-200" />
-            <span>أرشيف التقارير اليومية</span>
+            <FileText className="w-4 h-4 text-[#FFC217]" />
+            <span>إنشاء تقرير يومي 📝</span>
+          </button>
+
+          <button
+            hidden={!hasViewFeature("view_daily_archive")}
+              onClick={() => {
+                if (onOpenDailyArchive) onOpenDailyArchive();
+                onClose();
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <Clock className="w-4 h-4 text-amber-200" />
+              <span>
+                {user.role === "super_admin" || user.role === "general_admin"
+                  ? "أرشيف التقارير اليومية (المركزي)"
+                  : "أرشيف تقارير إدارتي اليومية"}
+              </span>
           </button>
 
           <div className="h-px bg-white/10 my-2"></div>
@@ -225,6 +253,7 @@ export default function AppDrawer({
               </div>
 
               <button
+                hidden={!hasFeature("manage_structure")}
                 onClick={() => handleItemClick("departments")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -233,6 +262,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasFeature("manage_structure")}
                 onClick={() => handleItemClick("sections")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -241,6 +271,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasFeature("manage_users")}
                 onClick={() => handleItemClick("users")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -249,6 +280,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasFeature("manage_structure")}
                 onClick={() => handleItemClick("categories")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -257,6 +289,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasFeature("manage_roles")}
                 onClick={() => handleItemClick("roles")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -269,6 +302,7 @@ export default function AppDrawer({
               </div>
 
               <button
+                hidden={!hasFeature("inspect_create")}
                 onClick={() => handleItemClick("create_case")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-amber-300 hover:bg-amber-500/10 transition-colors"
               >
@@ -277,6 +311,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasViewFeature("view_open_cases")}
                 onClick={() => handleItemClick("open_cases")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -285,6 +320,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasViewFeature("view_in_progress_cases")}
                 onClick={() => handleItemClick("in_progress")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -293,6 +329,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasViewFeature("view_review_cases")}
                 onClick={() => handleItemClick("needs_review")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -301,6 +338,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasViewFeature("view_closed_cases")}
                 onClick={() => handleItemClick("closed_cases")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -309,6 +347,16 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasViewFeature("view_all_cases")}
+                onClick={() => handleItemClick("all_cases")}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <FileText className="w-4 h-4 text-slate-300" />
+                <span>السجل العام للحالات</span>
+              </button>
+
+              <button
+                hidden={!hasFeature("manage_forms")}
                 onClick={() => handleItemClick("dynamic_forms")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-black text-amber-200 hover:bg-amber-500/10 transition-colors border border-amber-500/20"
               >
@@ -321,6 +369,7 @@ export default function AppDrawer({
               </div>
 
               <button
+                hidden={!hasFeature("export_excel")}
                 onClick={() => handleItemClick("export_excel")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-emerald-300 hover:bg-emerald-500/10 transition-colors"
               >
@@ -332,18 +381,18 @@ export default function AppDrawer({
                 التهيئة والصيانة المتقدمة
               </div>
 
-              {onOpenImportModal && (
-                <button
-                  onClick={() => {
-                    onOpenImportModal();
-                    onClose();
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-amber-300 hover:text-white hover:bg-amber-500/10 transition-colors"
-                >
-                  <Upload className="w-4 h-4 text-[#FFC217]" />
-                  <span>تهيئة واستيراد البيانات عبر Excel</span>
-                </button>
-              )}
+              <button
+                hidden={!hasFeature("import_excel")}
+                onClick={() => {
+                  if (onOpenImportModal) onOpenImportModal();
+                  else handleItemClick("import_excel");
+                  onClose();
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-amber-300 hover:text-white hover:bg-amber-500/10 transition-colors"
+              >
+                <Upload className="w-4 h-4 text-[#FFC217]" />
+                <span>تهيئة واستيراد البيانات عبر Excel</span>
+              </button>
 
               {onOpenResetModal && user.role === "super_admin" && (
                 <button
@@ -367,7 +416,14 @@ export default function AppDrawer({
                 إدارة مهام وحالات الإدارة ({user.department_name})
               </div>
 
+              {hasFeature("manage_structure") && <button onClick={() => handleItemClick("departments")} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"><Building2 className="w-4 h-4 text-amber-300" /><span>هيكل الإدارات والأقسام</span></button>}
+              {hasFeature("manage_users") && <button onClick={() => handleItemClick("users")} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"><Users className="w-4 h-4 text-amber-300" /><span>المستخدمين والصلاحيات</span></button>}
+              {hasFeature("manage_roles") && <button onClick={() => handleItemClick("roles")} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"><Shield className="w-4 h-4 text-amber-300" /><span>الأدوار ومصفوفة الصلاحيات</span></button>}
+              {hasFeature("manage_forms") && <button onClick={() => handleItemClick("dynamic_forms")} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"><Sparkles className="w-4 h-4 text-amber-300" /><span>إدارة النماذج والاستمارات</span></button>}
+              {hasFeature("import_excel") && <button onClick={() => handleItemClick("import_excel")} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-amber-300 hover:text-white hover:bg-white/10 transition-colors"><Upload className="w-4 h-4 text-[#FFC217]" /><span>تهيئة واستيراد Excel</span></button>}
+
               <button
+                hidden={!hasFeature("inspect_create")}
                 onClick={() => handleItemClick("create_case")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-amber-300 hover:bg-amber-500/10 transition-colors"
               >
@@ -376,6 +432,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasViewFeature("view_open_cases")}
                 onClick={() => handleItemClick("open_cases")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -384,6 +441,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasViewFeature("view_in_progress_cases")}
                 onClick={() => handleItemClick("in_progress")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -392,6 +450,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasViewFeature("view_review_cases")}
                 onClick={() => handleItemClick("needs_review")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -400,6 +459,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasViewFeature("view_closed_cases")}
                 onClick={() => handleItemClick("closed_cases")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -408,6 +468,16 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasViewFeature("view_all_cases")}
+                onClick={() => handleItemClick("all_cases")}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <FileText className="w-4 h-4 text-slate-300" />
+                <span>السجل العام للحالات</span>
+              </button>
+
+              <button
+                hidden={!hasViewFeature("view_executor_directory")}
                 onClick={() => handleItemClick("my_executors")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -416,6 +486,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasFeature("export_excel")}
                 onClick={() => handleItemClick("export_excel")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-emerald-300 hover:bg-emerald-500/10 transition-colors"
               >
@@ -433,6 +504,7 @@ export default function AppDrawer({
               </div>
 
               <button
+                hidden={!hasFeature("inspect_create")}
                 onClick={() => handleItemClick("new_inspection")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-amber-300 hover:bg-amber-500/10 transition-colors"
               >
@@ -441,6 +513,16 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasFeature("inspect_create")}
+                onClick={() => handleItemClick("dynamic_forms")}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <Sparkles className="w-4 h-4 text-amber-300" />
+                <span>الاستمارة الديناميكية للتفتيش</span>
+              </button>
+
+              <button
+                hidden={!hasViewFeature("inspect_view_own")}
                 onClick={() => handleItemClick("my_cases")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -449,6 +531,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasViewFeature("inspect_view_own")}
                 onClick={() => handleItemClick("track_cases")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -466,6 +549,7 @@ export default function AppDrawer({
               </div>
 
               <button
+                hidden={!hasViewFeature("field_execute")}
                 onClick={() => handleItemClick("tasks_new")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -474,6 +558,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasViewFeature("field_execute")}
                 onClick={() => handleItemClick("tasks_returned")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -482,6 +567,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasViewFeature("field_execute")}
                 onClick={() => handleItemClick("tasks_submitted")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -490,6 +576,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasViewFeature("field_feedback")}
                 onClick={() => handleItemClick("tasks_closed")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
               >
@@ -498,6 +585,7 @@ export default function AppDrawer({
               </button>
 
               <button
+                hidden={!hasFeature("field_execute")}
                 onClick={() => handleItemClick("dynamic_field")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-black text-[#FFC217] hover:bg-amber-500/15 transition-colors border border-amber-500/30 mt-2"
               >

@@ -56,6 +56,7 @@ interface PermissionsMatrixViewProps {
     full_name: string;
     role: string;
   };
+  canManageRoles?: boolean;
 }
 
 // Full Permissions Hierarchy Definition
@@ -87,6 +88,20 @@ const PERMISSIONS_SCHEMA = [
     ],
   },
   {
+    categoryId: "case_views",
+    categoryName: "الاطلاع على قوائم الحالات والمنفذين",
+    categoryIcon: Eye,
+    color: "cyan",
+    items: [
+      { key: "view_open_cases", name: "عرض الحالات المفتوحة", description: "مشاهدة الحالات التي تنتظر الفرز دون منح صلاحية إسنادها تلقائياً", allowDeptOnly: true },
+      { key: "view_in_progress_cases", name: "عرض الحالات قيد التنفيذ", description: "مشاهدة ومتابعة المهام الجارية دون منح صلاحية تعديلها تلقائياً", allowDeptOnly: true },
+      { key: "view_review_cases", name: "عرض الحالات التي تنتظر المراجعة", description: "مشاهدة ردود المنفذين دون منح صلاحية اعتمادها تلقائياً", allowDeptOnly: true },
+      { key: "view_closed_cases", name: "عرض الحالات المغلقة", description: "مشاهدة سجل الحالات المغلقة ضمن نطاق الإدارة أو النظام", allowDeptOnly: true },
+      { key: "view_all_cases", name: "عرض سجل الحالات العام", description: "مشاهدة سجل الحالات العام ضمن نطاق الإدارة أو النظام", allowDeptOnly: true },
+      { key: "view_executor_directory", name: "عرض قائمة المنفذين الميدانيين", description: "مشاهدة دليل المنفذين دون منح صلاحية إسناد الحالات إليهم تلقائياً", allowDeptOnly: true },
+    ],
+  },
+  {
     categoryId: "triage",
     categoryName: "الفرز، الإسناد، والتوجيه الإداري",
     categoryIcon: Send,
@@ -108,6 +123,18 @@ const PERMISSIONS_SCHEMA = [
         key: "triage_curated",
         name: "التنقية الإدارية للاستمارات (Curated Dispatch)",
         description: "حجب الأسئلة الحساسة عن الميدانيين وإعادة صياغة التوجيهات",
+        allowDeptOnly: true,
+      },
+      {
+        key: "additional_assignment",
+        name: "إسناد منفذ إضافي أثناء التنفيذ",
+        description: "إضافة منفذ جديد للمهمة الجارية مع إبقاء التكليفات السابقة",
+        allowDeptOnly: true,
+      },
+      {
+        key: "write_in_progress_note",
+        name: "كتابة ملاحظة للمنفذين أثناء التنفيذ",
+        description: "إرسال توجيه أو ملاحظة مباشرة إلى المنفذين المكلفين بالمهمة الجارية",
         allowDeptOnly: true,
       },
     ],
@@ -142,6 +169,12 @@ const PERMISSIONS_SCHEMA = [
         key: "review_approve",
         name: "اعتماد المعالجة الميدانية وإغلاق الحالة",
         description: "الموافقة على إجراء المنفذ وإغلاق الحالة نهائياً مع التوجيه",
+        allowDeptOnly: true,
+      },
+      {
+        key: "close_in_progress_case",
+        name: "إغلاق المهمة وهي قيد التنفيذ",
+        description: "السماح بإغلاق المهمة مباشرة قبل اكتمال دورة المراجعة المعتادة",
         allowDeptOnly: true,
       },
       {
@@ -189,6 +222,30 @@ const PERMISSIONS_SCHEMA = [
         allowDeptOnly: false,
       },
       {
+        key: "manage_sync",
+        name: "فتح نافذة المزامنة ووضع قاعدة البيانات",
+        description: "التحكم في ظهور أدوات المزامنة وتبديل وضع النظام من الواجهة",
+        allowDeptOnly: false,
+      },
+      {
+        key: "import_excel",
+        name: "استيراد وتهيئة البيانات من Excel",
+        description: "استيراد جداول الإدارات والأقسام والمستخدمين والحالات من ملفات Excel",
+        allowDeptOnly: false,
+      },
+      {
+        key: "create_daily_report",
+        name: "إنشاء التقارير اليومية",
+        description: "السماح بفتح نموذج التقرير اليومي وإرساله",
+        allowDeptOnly: false,
+      },
+      {
+        key: "view_daily_archive",
+        name: "مشاهدة وتصدير أرشيف التقارير اليومية",
+        description: "السماح بالاطلاع على الأرشيف وتصديره إلى Excel",
+        allowDeptOnly: true,
+      },
+      {
         key: "export_excel",
         name: "تصدير سجلات وتقارير الإكسل الشاملة",
         description: "ربط إكسل الحي أو تصدير الجداول الشاملة للبيانات",
@@ -204,7 +261,33 @@ const PERMISSIONS_SCHEMA = [
         key: "manage_forms",
         name: "بناء وتصميم الاستمارات والنماذج الذكية",
         description: "تصميم قوالب الأسئلة المتعددة المراحل وتحديد الأدوار المصرح لها",
-        allowDeptOnly: true,
+        allowDeptOnly: false,
+      },
+    ],
+  },
+  {
+    categoryId: "account_access",
+    categoryName: "القوائم والحسابات الشخصية",
+    categoryIcon: Eye,
+    color: "slate",
+    items: [
+      {
+        key: "change_own_pin",
+        name: "تغيير رمز المرور الشخصي",
+        description: "إظهار نافذة تغيير رمز الدخول الخاص بالمستخدم",
+        allowDeptOnly: false,
+      },
+      {
+        key: "offline_outbox",
+        name: "قائمة البلاغات المحفوظة أوفلاين",
+        description: "فتح قائمة العناصر المحلية المنتظرة للإرسال عند توفر الاتصال",
+        allowDeptOnly: false,
+      },
+      {
+        key: "inspect_view_own",
+        name: "مشاهدة وتتبع الحالات المرصودة للمفتش",
+        description: "إظهار سجل الحالات التي رصدها المفتش ومتابعة مراحلها",
+        allowDeptOnly: false,
       },
     ],
   },
@@ -218,12 +301,28 @@ const DEFAULT_SYSTEM_ROLES = [
   { code: "field_agent", name: "منفذ ميداني (Field Agent)", isSystem: true, badge: "bg-emerald-100 text-emerald-900 border-emerald-300" },
 ];
 
+const INHERITED_SYSTEM_ROLE_PERMISSIONS: Record<string, Record<string, string>> = {
+  admin: {
+    can_view: "dept_only", can_create: "dept_only", can_assign: "dept_only", can_review: "dept_only", can_close: "dept_only", can_delete: "none",
+    view_open_cases: "dept_only", view_in_progress_cases: "dept_only", view_review_cases: "dept_only", view_closed_cases: "dept_only", view_all_cases: "dept_only", view_executor_directory: "dept_only",
+    inspect_create: "dept_only", triage_assign: "dept_only", triage_direct_user: "dept_only", triage_curated: "dept_only",
+    additional_assignment: "dept_only", write_in_progress_note: "dept_only", review_approve: "dept_only", review_round_bump: "dept_only", close_in_progress_case: "dept_only",
+    offline_outbox: "full", change_own_pin: "full",
+  },
+  inspector: {
+    can_view: "dept_only", can_create: "full", inspect_create: "full", inspect_offline: "full", inspect_typeahead: "full", inspect_view_own: "full",
+    offline_outbox: "full", change_own_pin: "full",
+  },
+  field_agent: { field_execute: "full", field_feedback: "full", offline_outbox: "full", change_own_pin: "full" },
+};
+
 export default function PermissionsMatrixView({
   roles = [],
   permissionsMatrix = [],
   currentUser,
+  canManageRoles = false,
 }: PermissionsMatrixViewProps) {
-  const isSuperUser = currentUser?.role === "super_admin" || currentUser?.role === "general_admin";
+  const isSuperUser = currentUser?.role === "super_admin" || currentUser?.role === "general_admin" || canManageRoles;
 
   // Build combined roles list
   const allRoleOptions = [
@@ -289,9 +388,25 @@ export default function PermissionsMatrixView({
         manage_structure: "full",
         manage_roles: "full",
         manage_users: "full",
+        manage_sync: "full",
+        import_excel: "full",
         export_excel: "full",
         print_pdf: "full",
         manage_forms: "full",
+        additional_assignment: "full",
+        write_in_progress_note: "full",
+        close_in_progress_case: "full",
+        view_open_cases: "full",
+        view_in_progress_cases: "full",
+        view_review_cases: "full",
+        view_closed_cases: "full",
+        view_all_cases: "full",
+        view_executor_directory: "full",
+        create_daily_report: "full",
+        view_daily_archive: "full",
+        change_own_pin: "full",
+        offline_outbox: "full",
+        inspect_view_own: "full",
       };
     }
 
@@ -303,7 +418,16 @@ export default function PermissionsMatrixView({
   const [notification, setNotification] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const selectedRole = allRoleOptions.find((r) => r.code === selectedRoleCode) || allRoleOptions[0];
-  const currentRolePerms = permissionsState[selectedRoleCode] || {};
+  const isUnlimitedRole = selectedRoleCode === "super_admin" || selectedRoleCode === "general_admin";
+  const storedRolePerms = permissionsState[selectedRoleCode] || {};
+  const getRolePermissionValue = (roleCode: string, permissionKey: string) => {
+    if (roleCode === "super_admin" || roleCode === "general_admin") return "full";
+    const stored = permissionsState[roleCode] || {};
+    if (Object.prototype.hasOwnProperty.call(stored, permissionKey)) return stored[permissionKey];
+    const roleOption = allRoleOptions.find((option) => option.code === roleCode);
+    const baseRole = roleCode.startsWith("crole_") ? String((roleOption as any)?.category || "") : roleCode;
+    return INHERITED_SYSTEM_ROLE_PERMISSIONS[baseRole]?.[permissionKey] || "none";
+  };
 
   const handleSetPermissionExact = (permKey: string, level: string) => {
     if (!isSuperUser) {
@@ -311,8 +435,8 @@ export default function PermissionsMatrixView({
       return;
     }
 
-    if (selectedRoleCode === "super_admin") {
-      setNotification({ type: "error", text: "صلاحيات مدير عام المنظومة ثابتة وشاملة ولا يمكن تقييدها" });
+    if (isUnlimitedRole) {
+      setNotification({ type: "error", text: "صلاحيات إدارة النظام العليا ثابتة وشاملة ولا يمكن تقييدها" });
       return;
     }
 
@@ -323,6 +447,16 @@ export default function PermissionsMatrixView({
         [permKey]: level,
       },
     }));
+    setSaveSuccess(false);
+  };
+
+  const handleClearPermission = (permKey: string) => {
+    if (!isSuperUser || isUnlimitedRole) return;
+    setPermissionsState((prev) => {
+      const next = { ...prev, [selectedRoleCode]: { ...(prev[selectedRoleCode] || {}) } };
+      delete next[selectedRoleCode][permKey];
+      return next;
+    });
     setSaveSuccess(false);
   };
 
@@ -522,7 +656,7 @@ export default function PermissionsMatrixView({
               </p>
             </div>
 
-            {isSuperUser && selectedRoleCode !== "super_admin" && (
+            {isSuperUser && !isUnlimitedRole && (
               <button
                 onClick={handleSaveChanges}
                 disabled={saving}
@@ -568,8 +702,9 @@ export default function PermissionsMatrixView({
 
                   <div className="divide-y divide-slate-100">
                     {cat.items.map((item) => {
-                      const currentVal = currentRolePerms[item.key] || "none";
-                      const isSuper = selectedRoleCode === "super_admin";
+                      const currentVal = getRolePermissionValue(selectedRoleCode, item.key);
+                      const isInherited = !Object.prototype.hasOwnProperty.call(storedRolePerms, item.key);
+                      const isSuper = isUnlimitedRole;
 
                       return (
                         <div
@@ -583,6 +718,11 @@ export default function PermissionsMatrixView({
                             <p className="text-[11px] text-slate-500 font-semibold leading-relaxed">
                               {item.description}
                             </p>
+                            {isInherited && !isSuper && (
+                              <span className="inline-flex mt-1 text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg">
+                                موروثة من الدور أو إعداد المستخدم
+                              </span>
+                            )}
                           </div>
 
                           {/* Control Buttons */}
@@ -593,6 +733,16 @@ export default function PermissionsMatrixView({
                               </span>
                             ) : (
                               <>
+                                {isSuperUser && !isInherited && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleClearPermission(item.key)}
+                                    className="px-2.5 py-1.5 rounded-xl text-[10px] font-black border border-slate-300 text-slate-600 hover:bg-slate-100"
+                                    title="إزالة التحديد الخاص والعودة إلى إعداد الدور أو الحساب"
+                                  >
+                                    افتراضي
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => handleSetPermissionExact(item.key, "full")}
@@ -693,8 +843,7 @@ export default function PermissionsMatrixView({
                         <span className="text-[10px] text-slate-400 font-medium block">{item.description}</span>
                       </td>
                       {allRoleOptions.map((r) => {
-                        const rolePerms = permissionsState[r.code] || {};
-                        const val = rolePerms[item.key] || "none";
+                        const val = getRolePermissionValue(r.code, item.key);
                         return (
                           <td key={r.code} className="py-3 px-3 text-center">
                             {renderBadge(val)}

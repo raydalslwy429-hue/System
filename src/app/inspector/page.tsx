@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import Navbar from "@/components/Navbar";
+import { getUserEffectivePermissions } from "@/app/actions/capa";
 import InspectorForm from "./InspectorForm";
 import { AlertCircle, Clock, CheckCircle2, FileText, MapPin, Tag, Sparkles } from "lucide-react";
 
@@ -10,6 +11,7 @@ const toPlain = <T,>(data: T): T => JSON.parse(JSON.stringify(data));
 export default async function InspectorDashboard() {
   const session = await getSession();
   if (!session) redirect("/login");
+  const userPermissions = await getUserEffectivePermissions(session);
   if (session.role !== "inspector" && session.role !== "admin" && session.role !== "super_admin" && session.role !== "general_admin") {
     redirect("/");
   }
@@ -38,15 +40,17 @@ export default async function InspectorDashboard() {
 
   // Fetch recent cases created by this inspector (or all for admin)
   const isAll = session.role === "admin" || session.role === "super_admin" || session.role === "general_admin";
-  const casesRes = await db.execute(
-    isAll
-      ? "SELECT id, case_number, internal_id, location_name, nc_name, description, status, obs_date, obs_time FROM cases_master ORDER BY case_number DESC LIMIT 20"
-      : {
-          sql: "SELECT id, case_number, internal_id, location_name, nc_name, description, status, obs_date, obs_time FROM cases_master WHERE inspector_pin = ? ORDER BY case_number DESC LIMIT 20",
-          args: [session.pin_code],
-        }
-  );
-  const recentCases = casesRes.rows;
+  const canViewOwnInspections = userPermissions.features.inspect_view_own !== "none";
+  const recentCases = canViewOwnInspections
+    ? (await db.execute(
+        isAll
+          ? "SELECT id, case_number, internal_id, location_name, nc_name, description, status, obs_date, obs_time FROM cases_master ORDER BY case_number DESC LIMIT 20"
+          : {
+              sql: "SELECT id, case_number, internal_id, location_name, nc_name, description, status, obs_date, obs_time FROM cases_master WHERE inspector_pin = ? ORDER BY case_number DESC LIMIT 20",
+              args: [session.pin_code],
+            }
+      )).rows
+    : [];
 
   const statusLabels: Record<string, { label: string; color: string }> = {
     pending_assignment: { label: "بانتظار فرز وتوجيه الإدارة", color: "bg-amber-100 text-amber-900 border-amber-300" },
@@ -57,7 +61,7 @@ export default async function InspectorDashboard() {
 
   return (
     <div className="min-h-screen bg-[#FAF7F4] flex flex-col">
-      <Navbar user={session} />
+      <Navbar user={session} userPermissions={JSON.parse(JSON.stringify(userPermissions))} />
 
       <main className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 flex-1">
         
@@ -95,7 +99,7 @@ export default async function InspectorDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
           {/* Form Card (7 Cols) */}
-          <div className="lg:col-span-7 bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm relative">
+          <div hidden={!(["full", "exclusive", "dept_only"].includes(userPermissions.features.inspect_create))} className="lg:col-span-7 bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm relative">
             <h3 className="text-base font-black text-[#1B1111] mb-6 flex items-center gap-2 border-b border-slate-100 pb-3">
               <span className="w-2.5 h-2.5 rounded-full bg-[#D49A3D]"></span>
               <span>تسجيل حالة عدم مطابقة جديدة</span>
@@ -109,7 +113,7 @@ export default async function InspectorDashboard() {
           </div>
 
           {/* Recent Cases Timeline (5 Cols) */}
-          <div className="lg:col-span-5 bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+          <div hidden={!canViewOwnInspections} className="lg:col-span-5 bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-black text-[#1B1111] flex items-center gap-2">
                 <Clock className="w-4 h-4 text-[#D49A3D]" />

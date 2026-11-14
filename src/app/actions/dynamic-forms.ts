@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { getUserEffectivePermissions } from "@/app/actions/capa";
 import {
   FormTemplate,
   FormQuestion,
@@ -11,10 +12,25 @@ import {
   CuratedFieldDispatch,
 } from "@/types/dynamic-forms";
 
+async function hasFeaturePermission(session: NonNullable<Awaited<ReturnType<typeof getSession>>>, key: string) {
+  const level = (await getUserEffectivePermissions(session)).features[key];
+  if (["full", "exclusive"].includes(level)) return true;
+  return level === "dept_only" && !key.startsWith("manage_") && key !== "delete_cases";
+}
+
+async function hasFeatureReadPermission(session: NonNullable<Awaited<ReturnType<typeof getSession>>>, key: string) {
+  if (session.role === "super_admin" || session.role === "general_admin") return true;
+  const level = (await getUserEffectivePermissions(session)).features[key];
+  return ["full", "exclusive", "dept_only", "view_only"].includes(level);
+}
+
 // 1. Fetch Dynamic Templates with their Questions
 export async function getDynamicTemplatesAction(userRole?: string) {
   const session = await getSession();
-  const role = userRole || session?.role || "inspector";
+  if (!session || !(await hasFeatureReadPermission(session, "inspect_create"))) {
+    return { success: false, error: "لا تملك صلاحية الاطلاع على استمارات التفتيش", templates: [] as FormTemplate[] };
+  }
+  const role = session.role === "super_admin" || session.role === "general_admin" ? userRole || session.role : session.role;
 
   let sql = "SELECT * FROM forms_templates WHERE status = 'active'";
   const templatesRes = await db.execute(sql);
@@ -91,7 +107,7 @@ export async function createDynamicTemplateAction(data: {
   }>;
 }) {
   const session = await getSession();
-  if (!session || (session.role !== "super_admin" && session.role !== "general_admin")) {
+  if (!session || !(await hasFeaturePermission(session, "manage_forms"))) {
     return { success: false, error: "صلاحية إنشاء الاستمارات محصورة بالقيادة العامة للمنظومة" };
   }
 
@@ -175,6 +191,9 @@ export async function submitFormResponseAction(data: {
   if (!session) {
     return { success: false, error: "يجب تسجيل الدخول أولاً لتسجيل الاستمارة" };
   }
+  if (!(await hasFeaturePermission(session, "inspect_create"))) {
+    return { success: false, error: "لا تملك صلاحية إرسال استمارات التفتيش" };
+  }
 
   // Resolve Location & Department
   const locRes = await db.execute({
@@ -256,7 +275,7 @@ export async function submitFormResponseAction(data: {
 // 4. Dept Admin: Curate, Edit, Filter Visibility, & Assign to Field Agent
 export async function curateAndAssignResponseAction(data: CuratedFieldDispatch) {
   const session = await getSession();
-  if (!session || (session.role !== "admin" && session.role !== "super_admin")) {
+  if (!session || !(await hasFeaturePermission(session, "triage_curated"))) {
     return { success: false, error: "صلاحية تحرير وتنقية الإسناد محصورة بمدير الإدارة" };
   }
 
@@ -339,10 +358,15 @@ export async function getDynamicResponsesAction(statusFilter?: string) {
   const session = await getSession();
   if (!session) return { success: false, responses: [] };
 
-  const isSuperAdmin = session.role === "super_admin";
+  const isSuperAdmin = session.role === "super_admin" || session.role === "general_admin";
   const isDeptAdmin = session.role === "admin";
   const isField = session.role === "field_agent";
   const isInspector = session.role === "inspector";
+  const canReadResponses = isSuperAdmin
+    || (isDeptAdmin && (await hasFeatureReadPermission(session, "triage_curated") || await hasFeatureReadPermission(session, "review_approve")))
+    || (isField && await hasFeatureReadPermission(session, "field_execute"))
+    || (isInspector && (await hasFeatureReadPermission(session, "inspect_create") || await hasFeatureReadPermission(session, "inspect_view_own")));
+  if (!canReadResponses) return { success: false, responses: [] };
 
   let query = `
     SELECT 
@@ -359,8 +383,8 @@ export async function getDynamicResponsesAction(statusFilter?: string) {
     whereClauses.push("r.department_code = ?");
     args.push(session.department_code);
   } else if (isField) {
-    whereClauses.push("(r.assigned_to_agent_id = ? OR r.department_code = ?)");
-    args.push(session.id, session.department_code);
+    whereClauses.push("r.assigned_to_agent_id = ?");
+    args.push(session.id);
   } else if (isInspector) {
     whereClauses.push("r.user_id = ?");
     args.push(session.id);
@@ -458,11 +482,20 @@ export async function submitDynamicResponseExecutionAction(data: {
 }) {
   const session = await getSession();
   if (!session) return { success: false, error: "يجب تسجيل الدخول" };
+  if (session.role !== "field_agent" || !(await hasFeaturePermission(session, "field_execute"))) {
+    return { success: false, error: "لا تملك صلاحية تنفيذ الاستمارات الميدانية" };
+  }
 
   const { responseId, actionTaken, notes, photoBase64 } = data;
   if (!actionTaken || actionTaken.trim() === "") {
     return { success: false, error: "يرجى كتابة الإجراء التصحيحي المتخذ ميدانياً" };
   }
+
+  const assignedResponse = await db.execute({
+    sql: "SELECT id FROM forms_responses WHERE id = ? AND assigned_to_agent_id = ? AND status = 'assigned'",
+    args: [responseId, session.id],
+  });
+  if (assignedResponse.rows.length === 0) return { success: false, error: "الاستمارة غير مسندة إليك أو تم إرسالها مسبقاً" };
 
   await db.execute({
     sql: `UPDATE forms_responses SET
@@ -472,12 +505,13 @@ export async function submitDynamicResponseExecutionAction(data: {
           field_media_data = ?,
           field_executed_at = datetime('now'),
           updated_at = datetime('now')
-          WHERE id = ?`,
+          WHERE id = ? AND assigned_to_agent_id = ? AND status = 'assigned'`,
     args: [
       actionTaken.trim(),
       notes?.trim() || null,
       photoBase64 || null,
       responseId,
+      session.id,
     ],
   });
 
@@ -504,7 +538,7 @@ export async function reviewDynamicResponseAction(data: {
   adminNotes?: string;
 }) {
   const session = await getSession();
-  if (!session || (session.role !== "admin" && session.role !== "super_admin")) {
+  if (!session || !(await hasFeaturePermission(session, "review_approve"))) {
     return { success: false, error: "غير مصرح" };
   }
 
@@ -547,6 +581,9 @@ export async function reviewDynamicResponseAction(data: {
 export async function exportDynamicFormToExcelAction(templateId: number) {
   const session = await getSession();
   if (!session) return { success: false, error: "يجب تسجيل الدخول" };
+  const exportLevel = (await getUserEffectivePermissions(session)).features.export_excel;
+  if (!["full", "exclusive", "dept_only"].includes(exportLevel)) return { success: false, error: "لا تملك صلاحية تصدير تقارير Excel" };
+  if (exportLevel === "dept_only" && !session.department_code) return { success: false, error: "لا يمكن تحديد نطاق الإدارة لتصدير التقرير" };
 
   // Fetch Template & Questions
   const tRes = await db.execute({ sql: "SELECT * FROM forms_templates WHERE id = ?", args: [templateId] });
@@ -589,7 +626,7 @@ export async function exportDynamicFormToExcelAction(templateId: number) {
   let respQuery = "SELECT * FROM forms_responses WHERE template_id = ?";
   const respArgs: any[] = [templateId];
 
-  if (session.role === "admin" && session.department_code) {
+  if (exportLevel === "dept_only" && session.department_code) {
     respQuery += " AND department_code = ?";
     respArgs.push(session.department_code);
   }

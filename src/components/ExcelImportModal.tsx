@@ -23,6 +23,7 @@ import {
   bulkImportTemplatesAction,
 } from "@/app/actions/capa";
 import { useRouter } from "next/navigation";
+import { downloadExcelFile, generateExcelWorkbookXML } from "@/lib/excel-helper";
 
 interface ExcelImportModalProps {
   isOpen: boolean;
@@ -45,7 +46,7 @@ const TEMPLATES: Record<
   departments: {
     title: "هيكل الإدارات",
     icon: Building2,
-    filename: "قالب_استيراد_الإدارات.csv",
+    filename: "قالب_استيراد_الإدارات.xls",
     headers: ["كود_الإدارة", "اسم_الإدارة", "الحالة"],
     sampleRow: ["dept_catering", "إدارة التموين والضيافة", "active"],
     desc: "أدخل كود الإدارة (إنجليزي بدون مسافات مثل dept_catering) واسم الإدارة بالعربي.",
@@ -53,7 +54,7 @@ const TEMPLATES: Record<
   sections: {
     title: "الأقسام والمواقع",
     icon: MapPin,
-    filename: "قالب_استيراد_الأقسام.csv",
+    filename: "قالب_استيراد_الأقسام.xls",
     headers: ["كود_القسم", "اسم_القسم", "كود_الإدارة_التابع_لها", "الحالة"],
     sampleRow: ["loc_pastry", "قسم المعجنات والحلويات", "dept_production", "active"],
     desc: "أدخل كود القسم واسمه وكود الإدارة الأم التي يتبع لها.",
@@ -61,7 +62,7 @@ const TEMPLATES: Record<
   users: {
     title: "المستخدمين والموظفين",
     icon: Users,
-    filename: "قالب_استيراد_المستخدمين.csv",
+    filename: "قالب_استيراد_المستخدمين.xls",
     headers: ["اسم_الموظف", "رمز_المرور_4_أرقام", "الدور_الوظيفي", "كود_الإدارة"],
     sampleRow: ["عمر سالم", "4321", "field_agent", "dept_operations"],
     desc: "الأدوار المتاحة: super_admin (مدير عام), admin (مدير إدارة), inspector (مفتش), field_agent (منفذ ميداني).",
@@ -69,7 +70,7 @@ const TEMPLATES: Record<
   categories: {
     title: "كتالوج حالات عدم المطابقة",
     icon: AlertTriangle,
-    filename: "قالب_استيراد_المخالفات.csv",
+    filename: "قالب_استيراد_المخالفات.xls",
     headers: ["كود_المخالفة", "اسم_المخالفة", "مستوى_الخطورة"],
     sampleRow: ["nc_storage", "سوء تخزين المواد الجافة", "medium"],
     desc: "مستويات الخطورة: low (منخفض), medium (متوسط), high (حرج/مرتفع).",
@@ -77,7 +78,7 @@ const TEMPLATES: Record<
   templates: {
     title: "استمارات التقارير والتفتيش",
     icon: FileText,
-    filename: "قالب_استيراد_الاستمارات.csv",
+    filename: "قالب_استيراد_الاستمارات.xls",
     headers: ["كود_الاستمارة", "عنوان_الاستمارة", "الوصف", "الأدوار_المصرح_لها"],
     sampleRow: ["form_weekly_audit", "استمارة التدقيق الأسبوعي", "فحص شامل للمستودعات", "inspector"],
     desc: "الأدوار المصرح لها: all أو inspector أو admin أو field_agent.",
@@ -96,29 +97,25 @@ export default function ExcelImportModal({ isOpen, onClose }: ExcelImportModalPr
 
   if (!isOpen) return null;
 
-  // Function to download blank CSV template with UTF-8 BOM
+  // Download an Excel workbook template with the expected headers and a sample row.
   const handleDownloadTemplate = (entity: EntityType) => {
     const tmpl = TEMPLATES[entity];
-    let csvContent = "\uFEFF"; // UTF-8 BOM for Arabic Excel
-    csvContent += tmpl.headers.map((h) => `"${h}"`).join(",") + "\r\n";
-    csvContent += tmpl.sampleRow.map((v) => `"${v}"`).join(",") + "\r\n";
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = tmpl.filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const columns = tmpl.headers.map((header, index) => ({ header, key: `c${index}` }));
+    const rows = [Object.fromEntries(tmpl.sampleRow.map((value, index) => [`c${index}`, value]))];
+    const xml = generateExcelWorkbookXML({ title: tmpl.title, sheets: [{ name: tmpl.title, columns, rows }] });
+    downloadExcelFile(xml, tmpl.filename);
   };
 
-  // Function to parse uploaded CSV
+  // Read the Excel SpreadsheetML workbook format used by the downloadable templates.
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     setError(null);
     setSuccess(null);
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".xls")) {
+      setError("يرجى اختيار ملف Excel بصيغة .xls. ملفات CSV وXLSX غير مدعومة.");
+      return;
+    }
 
     setFileName(file.name);
     const reader = new FileReader();
@@ -126,38 +123,31 @@ export default function ExcelImportModal({ isOpen, onClose }: ExcelImportModalPr
     reader.onload = (event) => {
       try {
         const text = String(event.target?.result || "");
-        const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
+        const doc = new DOMParser().parseFromString(text, "application/xml");
+        if (doc.querySelector("parsererror")) throw new Error("ملف Excel غير صالح أو تالف");
+        const worksheet = doc.getElementsByTagNameNS("*", "Worksheet")[0];
+        const table = worksheet?.getElementsByTagNameNS("*", "Table")[0];
+        const lines = table ? Array.from(table.getElementsByTagNameNS("*", "Row")) : [];
         if (lines.length < 2) {
           setError("الملف فارغ أو لا يحتوي على صفوف بيانات بعد رأس الأعمدة");
           return;
         }
 
-        // Parse CSV line safely
-        const parseLine = (line: string) => {
-          const result: string[] = [];
-          let current = "";
-          let inQuotes = false;
-          for (let i = 0; i < line.length; i++) {
-            const char = line[i];
-            if (char === '"') {
-              inQuotes = !inQuotes;
-            } else if ((char === "," || char === ";") && !inQuotes) {
-              result.push(current.trim());
-              current = "";
-            } else {
-              current += char;
-            }
-          }
-          result.push(current.trim());
-          return result;
-        };
-
-        const headers = parseLine(lines[0]).map((h) => h.replace(/^["']|["']$/g, "").trim());
+        const readRow = (row: Element) => Array.from(row.getElementsByTagNameNS("*", "Cell")).map((cell) => {
+          const index = Number(cell.getAttributeNS("urn:schemas-microsoft-com:office:spreadsheet", "Index"));
+          const value = cell.getElementsByTagNameNS("*", "Data")[0]?.textContent?.trim() || "";
+          return { index, value };
+        }).reduce<string[]>((values, cell) => {
+          if (cell.index > 0) while (values.length < cell.index - 1) values.push("");
+          values.push(cell.value);
+          return values;
+        }, []);
+        const headers = readRow(lines[0]);
         setParsedHeaders(headers);
 
         const rows: any[] = [];
         for (let i = 1; i < lines.length; i++) {
-          const values = parseLine(lines[i]).map((v) => v.replace(/^["']|["']$/g, "").trim());
+          const values = readRow(lines[i]);
           if (values.length > 0 && values.some((v) => v !== "")) {
             const rowObj: Record<string, string> = {};
             headers.forEach((h, idx) => {
@@ -230,7 +220,7 @@ export default function ExcelImportModal({ isOpen, onClose }: ExcelImportModalPr
       }
 
       if (res.success) {
-        setSuccess(`🎉 تم بنجاح استيراد وتحديث (${res.count}) سجل في قاعدة بيانات تيرزو!`);
+        setSuccess(`تم استيراد وتحديث ${res.count} سجل في قاعدة البيانات المحلية بنجاح.`);
         setTimeout(() => {
           setSuccess(null);
           setParsedRows([]);
@@ -330,7 +320,7 @@ export default function ExcelImportModal({ isOpen, onClose }: ExcelImportModalPr
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs flex items-center gap-1.5 shadow-md transition-all"
               >
                 <Download className="w-4 h-4" />
-                <span>تحميل قالب ({currentTemplate.title})</span>
+              <span>تحميل قالب Excel ({currentTemplate.title})</span>
               </button>
             </div>
 
@@ -354,7 +344,7 @@ export default function ExcelImportModal({ isOpen, onClose }: ExcelImportModalPr
               <span className="w-5 h-5 rounded-full bg-[#FFC217] text-[#1B1111] flex items-center justify-center text-[10px]">
                 2
               </span>
-              <span>رفع ملف الإكسل المعبأ (.csv) للاستيراد المباشر</span>
+                  <span>رفع ملف Excel المعبأ (.xls) للاستيراد المحلي</span>
             </h4>
 
             <label className="border-2 border-dashed border-[#D49A3D]/40 hover:border-[#FFC217] rounded-2xl p-5 flex flex-col items-center justify-center gap-2 cursor-pointer bg-black/20 hover:bg-black/30 transition-all text-center">
@@ -364,10 +354,10 @@ export default function ExcelImportModal({ isOpen, onClose }: ExcelImportModalPr
                   {fileName ? `الملف المحدد: ${fileName}` : "انقر هنا لاختيار ملف إكسل أو اسحبه هنا"}
                 </span>
                 <span className="text-[10px] text-slate-400 block mt-0.5">
-                  ملف CSV بترميز UTF-8 متوافق مع كافة برامج الجداول
+                  مصنف Excel بصيغة .xls مع دعم الأوراق العربية
                 </span>
               </div>
-              <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+              <input type="file" accept=".xls,application/vnd.ms-excel,application/xml,text/xml" onChange={handleFileUpload} className="hidden" />
             </label>
           </div>
 
@@ -391,7 +381,7 @@ export default function ExcelImportModal({ isOpen, onClose }: ExcelImportModalPr
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs font-black text-amber-200">
                 <span>معاينة البيانات قبل الحفظ ({parsedRows.length} صف):</span>
-                <span className="text-emerald-400 text-[11px]">جاهز للاستيراد السحابي</span>
+                <span className="text-emerald-400 text-[11px]">جاهز للحفظ محلياً</span>
               </div>
 
               <div className="overflow-x-auto max-h-48 border border-white/10 rounded-2xl bg-black/50">

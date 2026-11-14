@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { submitExecutionAction } from "@/app/actions/capa";
+import AssignedDynamicForms from "./AssignedDynamicForms";
 import {
   Inbox,
   RotateCcw,
@@ -62,12 +63,14 @@ export default function FieldQueue({
   newAssignments,
   returnedAssignments,
   closedCases = [],
+  canExecute = true,
 }: {
   newAssignments: AssignmentItem[];
   returnedAssignments: AssignmentItem[];
   closedCases?: ClosedCaseItem[];
+  canExecute?: boolean;
 }) {
-  const [activeTab, setActiveTab] = useState<"new" | "returned" | "closed">(
+  const [activeTab, setActiveTab] = useState<"new" | "returned" | "submitted" | "closed" | "dynamic">(
     returnedAssignments.length > 0 ? "returned" : newAssignments.length > 0 ? "new" : "closed"
   );
   const [submittingId, setSubmittingId] = useState<string | null>(null);
@@ -81,13 +84,19 @@ export default function FieldQueue({
       const key = e.detail?.key;
       if (key === "tasks_new") setActiveTab("new");
       else if (key === "tasks_returned") setActiveTab("returned");
+      else if (key === "tasks_submitted") setActiveTab("submitted");
       else if (key === "tasks_closed") setActiveTab("closed");
+      else if (key === "dynamic_field") setActiveTab("dynamic");
     };
     window.addEventListener("marasim_drawer_navigate", handleDrawerNavigate);
     return () => window.removeEventListener("marasim_drawer_navigate", handleDrawerNavigate);
   }, []);
 
-  const currentList = activeTab === "new" ? newAssignments : returnedAssignments;
+  const currentList = activeTab === "new"
+    ? newAssignments
+    : activeTab === "returned"
+      ? returnedAssignments
+      : [...newAssignments, ...returnedAssignments].filter((assignment) => assignment.asgStatus === "completed");
 
   const handleInputChange = (asgId: string, field: "action" | "notes", value: string) => {
     setFormDataState((prev) => ({
@@ -165,6 +174,21 @@ export default function FieldQueue({
         </button>
 
         <button
+          onClick={() => setActiveTab("submitted")}
+          className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${
+            activeTab === "submitted"
+              ? "bg-blue-700 text-white shadow-md"
+              : "text-blue-800 hover:bg-blue-50"
+          }`}
+        >
+          <Clock className="w-4 h-4 text-blue-400" />
+          <span>⏳ بانتظار مراجعة الإدارة</span>
+          <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-100 text-blue-900 font-black border border-blue-200">
+            {[...newAssignments, ...returnedAssignments].filter((assignment) => assignment.asgStatus === "completed").length}
+          </span>
+        </button>
+
+        <button
           onClick={() => setActiveTab("returned")}
           className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${
             activeTab === "returned"
@@ -196,7 +220,9 @@ export default function FieldQueue({
       </div>
 
       {/* Closed Cases View with Feedback */}
-      {activeTab === "closed" ? (
+      {activeTab === "dynamic" ? (
+        <AssignedDynamicForms canExecute={canExecute} />
+      ) : activeTab === "closed" ? (
         closedCases.length === 0 ? (
           <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm">
             <CheckCircle2 className="w-12 h-12 text-slate-300 mx-auto mb-2" />
@@ -290,7 +316,11 @@ export default function FieldQueue({
             <CheckCircle2 className="w-8 h-8" />
           </div>
           <h3 className="text-base font-black text-[#1B1111] mb-1">
-            {activeTab === "new" ? "لا توجد بلاغات جديدة بانتظار التنفيذ!" : "لا توجد بلاغات معادة للاستكمال!"}
+            {activeTab === "new"
+              ? "لا توجد بلاغات جديدة بانتظار التنفيذ!"
+              : activeTab === "returned"
+                ? "لا توجد بلاغات معادة للاستكمال!"
+                : "لا توجد بلاغات مرسلة بانتظار مراجعة الإدارة!"}
           </h3>
           <p className="text-xs text-slate-500 font-bold">كافة المهام الموكلة لقسمك منجزة ومحولة للإدارة بنجاح.</p>
         </div>
@@ -476,6 +506,10 @@ export default function FieldQueue({
                       <p className="text-[11px] text-purple-800 font-bold">
                         📌 بمجرد اعتماد الإدارة لردك ستتحول حالتك إلى &quot;مقبولة&quot;، أو ستعاد إليك في حال طلبت الإدارة استكمال المهمة.
                       </p>
+                    </div>
+                  ) : !canExecute ? (
+                    <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 text-blue-900 text-xs font-bold">
+                      هذه المهمة متاحة للاطلاع فقط، ولا تملك صلاحية تسجيل أو إرسال إجراء ميداني.
                     </div>
                   ) : (
                     <>

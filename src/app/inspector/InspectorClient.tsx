@@ -37,6 +37,8 @@ export default function InspectorClient({
         setActiveFormMode("dynamic");
       } else if (key === "new_inspection") {
         setActiveFormMode("classic");
+      } else if (key === "my_cases" || key === "track_cases") {
+        document.getElementById("inspector-history")?.scrollIntoView({ behavior: "smooth", block: "start" });
       }
     };
 
@@ -141,7 +143,7 @@ export default function InspectorClient({
       </div>
 
       {/* Right Column: Recent Log */}
-      <div className="lg:col-span-5 bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+      <div id="inspector-history" className="lg:col-span-5 bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-sm space-y-4 scroll-mt-24">
         <h3 className="text-base font-black text-[#1B1111] pb-3 border-b border-slate-100 flex items-center justify-between">
           <span className="flex items-center gap-2">
             <Clock className="w-5 h-5 text-[#D49A3D]" />

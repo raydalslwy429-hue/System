@@ -95,9 +95,10 @@ import PermissionsMatrixView from "@/components/PermissionsMatrixView";
 import DataSyncHubModal from "@/components/DataSyncHubModal";
 import CreateDailyReportModal from "@/components/CreateDailyReportModal";
 import DailyReportsArchiveModal from "@/components/DailyReportsArchiveModal";
-import { toggleUserDailyReportAction } from "@/app/actions/daily_reports";
+import { toggleUserDailyReportAction, toggleUserDailyArchivePermissionAction } from "@/app/actions/daily_reports";
 import InspectorForm from "../inspector/InspectorForm";
 import FormBuilder from "./FormBuilder";
+import ExcelImportModal from "@/components/ExcelImportModal";
 
 // Props types
 interface AdminManagerProps {
@@ -141,7 +142,8 @@ export default function AdminManager({
 
   // Navigation State
   const [activeMenu, setActiveMenu] = useState<string>("open_cases");
-  const [configTab, setConfigTab] = useState<"depts" | "sections" | "roles" | "categories" | "matrix" | "reset">("depts");
+  const [configTab, setConfigTab] = useState<"depts" | "sections" | "roles" | "categories" | "matrix" | "data" | "reset">("depts");
+  const [showExcelImport, setShowExcelImport] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [isPending, startTransition] = useTransition();
 
@@ -162,9 +164,19 @@ export default function AdminManager({
 
   const isSuperAdmin = currentUser?.role === "super_admin";
   const isGeneralAdmin = currentUser?.role === "general_admin";
-  const isSystemAdmin = isSuperAdmin || isGeneralAdmin;
-  const canDeleteCases = isSuperAdmin || isGeneralAdmin;
-  const canCreateDailyReport = isSuperAdmin || isGeneralAdmin || currentUser?.can_create_daily_report !== 0;
+  const hasFeature = (key: string) => userPermissions?.features?.[key] === "full";
+  const hasFeatureAccess = (key: string) => ["full", "exclusive", "dept_only", "view_only"].includes(userPermissions?.features?.[key]);
+  const hasActionFeature = (key: string) => ["full", "exclusive", "dept_only"].includes(userPermissions?.features?.[key]);
+  const canManageStructure = isSuperAdmin || isGeneralAdmin || hasFeature("manage_structure");
+  const canManageRoles = isSuperAdmin || isGeneralAdmin || hasFeature("manage_roles");
+  const canManageUsers = isSuperAdmin || isGeneralAdmin || hasFeature("manage_users");
+  const canManageForms = isSuperAdmin || isGeneralAdmin || hasFeature("manage_forms");
+  const canReadReports = isSuperAdmin || isGeneralAdmin || hasFeature("export_excel") || hasFeature("print_pdf");
+  const canManageSync = isSuperAdmin || isGeneralAdmin || hasFeature("manage_sync");
+  const canImportExcel = isSuperAdmin || isGeneralAdmin || hasFeature("import_excel");
+  const isSystemAdmin = isSuperAdmin || isGeneralAdmin || ["manage_structure", "manage_roles", "manage_users", "manage_forms", "print_pdf", "export_excel", "manage_sync", "import_excel"].some(hasFeature);
+  const canDeleteCases = isSuperAdmin || isGeneralAdmin || ["full", "exclusive"].includes(userPermissions?.features?.delete_cases);
+  const canCreateDailyReport = hasActionFeature("create_daily_report");
 
   // Daily Reports Modal States
   const [showDailyReportModal, setShowDailyReportModal] = useState<boolean>(false);
@@ -223,16 +235,41 @@ export default function AdminManager({
       const key = e.detail?.key;
       if (key) {
         if (key === "export_excel") {
-          handleExportCasesExcel();
+          if (hasFeatureAccess("export_excel")) handleExportCasesExcel();
+          return;
+        }
+        if (key === "import_excel") {
+          if (canImportExcel) setShowExcelImport(true);
+          return;
+        }
+        if (key === "manage_sync") {
+          if (canManageSync) setShowDataSyncModal(true);
           return;
         }
 
-        const adminOnlyKeys = [
-          "system_config", "departments", "sections", "roles", "categories", 
-          "permissions_matrix", "users", "dynamic_forms", "reports", "audit", "change_pin"
-        ];
-        if (!isSystemAdmin && adminOnlyKeys.includes(key)) {
-          setActiveMenu("open_cases");
+        const requiredPermission: Record<string, boolean> = {
+          system_config: canManageStructure || canManageRoles || canManageUsers,
+          departments: canManageStructure,
+          sections: canManageStructure,
+          categories: canManageStructure,
+          roles: canManageRoles,
+          permissions_matrix: canManageRoles,
+          users: canManageUsers,
+          dynamic_forms: canManageForms,
+          reports: canReadReports,
+          audit: canManageStructure || canManageRoles || canManageUsers,
+          change_pin: isSystemAdmin,
+          import_excel: canImportExcel,
+          manage_sync: canManageSync,
+          create_case: hasActionFeature("inspect_create"),
+          open_cases: hasFeatureAccess("view_open_cases"),
+          in_progress: hasFeatureAccess("view_in_progress_cases"),
+          needs_review: hasFeatureAccess("view_review_cases"),
+          closed_cases: hasFeatureAccess("view_closed_cases"),
+          all_cases: hasFeatureAccess("view_all_cases"),
+          my_executors: hasFeatureAccess("view_executor_directory"),
+        };
+        if (key in requiredPermission && !requiredPermission[key]) {
           return;
         }
 
@@ -240,6 +277,8 @@ export default function AdminManager({
         else if (key === "in_progress") setActiveMenu("in_progress_cases");
         else if (key === "needs_review") setActiveMenu("review_cases");
         else if (key === "closed_cases") setActiveMenu("closed_cases");
+        else if (key === "all_cases") setActiveMenu("all_cases");
+        else if (key === "my_executors") setActiveMenu("my_executors");
         else if (key === "departments") { setActiveMenu("system_config"); setConfigTab("depts"); }
         else if (key === "sections") { setActiveMenu("system_config"); setConfigTab("sections"); }
         else if (key === "roles") { setActiveMenu("system_config"); setConfigTab("roles"); }
@@ -250,7 +289,7 @@ export default function AdminManager({
     };
     window.addEventListener("marasim_drawer_navigate", handleDrawerNavigate);
     return () => window.removeEventListener("marasim_drawer_navigate", handleDrawerNavigate);
-  }, [isSystemAdmin]);
+  }, [isSystemAdmin, canManageStructure, canManageRoles, canManageUsers, canManageForms, canReadReports, canImportExcel, canManageSync, userPermissions]);
 
   // Dispatch state (departments & specific users)
   const [dispatchSelections, setDispatchSelections] = useState<Record<number, string[]>>({});
@@ -309,6 +348,7 @@ export default function AdminManager({
   const [userFormRole, setUserFormRole] = useState("field_agent");
   const [userFormDept, setUserFormDept] = useState("");
   const [userFormCanExcel, setUserFormCanExcel] = useState(false);
+  const [userFormCanArchive, setUserFormCanArchive] = useState(false);
 
   // PDF Report Modal State
   const [showPdfModal, setShowPdfModal] = useState(false);
@@ -668,6 +708,7 @@ export default function AdminManager({
     setUserFormRole(u.role || "field_agent");
     setUserFormDept(u.department_code || "");
     setUserFormCanExcel(u.can_export_excel === 1);
+    setUserFormCanArchive(u.can_view_daily_archive === 1);
     setShowEditUserModal(true);
   };
 
@@ -722,16 +763,17 @@ export default function AdminManager({
     {
       group: "العمليات وحالات عدم المطابقة (CAPA)",
       items: [
-        { id: "create_case", label: "إنشاء حالة جديدة", icon: PlusCircle, badge: null, color: "text-amber-500" },
+        ...(hasActionFeature("inspect_create") ? [{ id: "create_case", label: "إنشاء حالة جديدة", icon: PlusCircle, badge: null, color: "text-amber-500" }] : []),
         ...(canCreateDailyReport
           ? [{ id: "create_daily_report", label: "إنشاء تقرير يومي", icon: FileText, badge: null, color: "text-[#D49A3D]" }]
           : []),
-        { id: "daily_reports_archive", label: "أرشيف التقارير اليومية", icon: History, badge: null, color: "text-[#D49A3D]" },
-        { id: "open_cases", label: "الحالات المفتوحة (بانتظار الفرز)", icon: Inbox, badge: pendingCases.length, color: "text-amber-600" },
-        { id: "in_progress_cases", label: "الحالات قيد التنفيذ الميداني", icon: Clock, badge: inProgressCases.length, color: "text-blue-600" },
-        { id: "review_cases", label: "الحالات التي تحتاج مراجعة", icon: Search, badge: reviewItems.length, color: "text-purple-600" },
-        { id: "closed_cases", label: "الحالات المغلقة", icon: CheckCircle2, badge: closedCases.length, color: "text-emerald-600" },
-        { id: "all_cases", label: "السجل العام المركزي", icon: Layers, badge: allCases.length, color: "text-slate-600" },
+        ...(hasFeatureAccess("view_daily_archive") ? [{ id: "daily_reports_archive", label: "أرشيف التقارير اليومية", icon: History, badge: null, color: "text-[#D49A3D]" }] : []),
+        ...(hasFeatureAccess("view_open_cases") ? [{ id: "open_cases", label: "الحالات المفتوحة (بانتظار الفرز)", icon: Inbox, badge: pendingCases.length, color: "text-amber-600" }] : []),
+        ...(hasFeatureAccess("view_in_progress_cases") ? [{ id: "in_progress_cases", label: "الحالات قيد التنفيذ الميداني", icon: Clock, badge: inProgressCases.length, color: "text-blue-600" }] : []),
+        ...(hasFeatureAccess("view_review_cases") ? [{ id: "review_cases", label: "الحالات التي تحتاج مراجعة", icon: Search, badge: reviewItems.length, color: "text-purple-600" }] : []),
+        ...(hasFeatureAccess("view_closed_cases") ? [{ id: "closed_cases", label: "الحالات المغلقة", icon: CheckCircle2, badge: closedCases.length, color: "text-emerald-600" }] : []),
+        ...(hasFeatureAccess("view_all_cases") ? [{ id: "all_cases", label: "السجل العام المركزي", icon: Layers, badge: allCases.length, color: "text-slate-600" }] : []),
+        ...(hasFeatureAccess("view_executor_directory") ? [{ id: "my_executors", label: "منفذو إدارتي الميدانيون", icon: Users, badge: fieldRoles.length, color: "text-amber-600" }] : []),
       ],
     },
     ...(isSystemAdmin
@@ -739,16 +781,16 @@ export default function AdminManager({
           {
             group: "التهيئة وإعدادات المنظومة",
             items: [
-              { id: "system_config", label: "⚙️ قائمة التهيئة والإعدادات المركزية", icon: Settings, badge: null, color: "text-[#D49A3D]" },
-              { id: "users", label: "كادر العمل والمستخدمين", icon: Users, badge: users.length, color: "text-[#682722]" },
-              { id: "dynamic_forms", label: "محرك النماذج المتطورة", icon: Sparkles, badge: null, color: "text-[#D49A3D]" },
+              ...(canManageStructure || canManageRoles || canManageUsers ? [{ id: "system_config", label: "⚙️ قائمة التهيئة والإعدادات المركزية", icon: Settings, badge: null, color: "text-[#D49A3D]" }] : []),
+              ...(canManageUsers ? [{ id: "users", label: "كادر العمل والمستخدمين", icon: Users, badge: users.length, color: "text-[#682722]" }] : []),
+              ...(canManageForms ? [{ id: "dynamic_forms", label: "محرك النماذج المتطورة", icon: Sparkles, badge: null, color: "text-[#D49A3D]" }] : []),
             ],
           },
           {
             group: "التقارير والرقابة والحساب",
             items: [
-              { id: "reports", label: "التقارير وطباعة PDF", icon: Sliders, badge: null, color: "text-blue-600" },
-              { id: "audit", label: "سجل التدقيق والرقابة", icon: History, badge: auditLogs.length, color: "text-slate-600" },
+              ...(canReadReports ? [{ id: "reports", label: "التقارير وطباعة PDF", icon: Sliders, badge: null, color: "text-blue-600" }] : []),
+              ...(canManageStructure || canManageRoles || canManageUsers ? [{ id: "audit", label: "سجل التدقيق والرقابة", icon: History, badge: auditLogs.length, color: "text-slate-600" }] : []),
               { id: "change_pin", label: "تغيير رمز المرور الشخصي", icon: KeyRound, badge: null, color: "text-[#682722]" },
             ],
           },
@@ -983,6 +1025,7 @@ export default function AdminManager({
                 <button
                   type="button"
                   onClick={() => setConfigTab("depts")}
+                  disabled={!canManageStructure}
                   className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
                     configTab === "depts"
                       ? "bg-[#682722] text-white shadow-xs"
@@ -996,6 +1039,7 @@ export default function AdminManager({
                 <button
                   type="button"
                   onClick={() => setConfigTab("sections")}
+                  disabled={!canManageStructure}
                   className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
                     configTab === "sections"
                       ? "bg-[#682722] text-white shadow-xs"
@@ -1009,6 +1053,7 @@ export default function AdminManager({
                 <button
                   type="button"
                   onClick={() => setConfigTab("roles")}
+                  disabled={!canManageRoles}
                   className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
                     configTab === "roles"
                       ? "bg-purple-700 text-white shadow-xs"
@@ -1022,6 +1067,7 @@ export default function AdminManager({
                 <button
                   type="button"
                   onClick={() => setConfigTab("categories")}
+                  disabled={!canManageStructure}
                   className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
                     configTab === "categories"
                       ? "bg-rose-700 text-white shadow-xs"
@@ -1035,6 +1081,7 @@ export default function AdminManager({
                 <button
                   type="button"
                   onClick={() => setConfigTab("matrix")}
+                  disabled={!canManageRoles}
                   className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
                     configTab === "matrix"
                       ? "bg-blue-700 text-white shadow-xs"
@@ -1045,7 +1092,17 @@ export default function AdminManager({
                   <span>مصفوفة توزيع الصلاحيات</span>
                 </button>
 
-                <button
+                {(canManageStructure || canManageUsers || canImportExcel || hasFeature("export_excel")) && <button
+                  type="button"
+                  onClick={() => setConfigTab("data")}
+                  disabled={!canManageStructure && !canManageUsers && !canImportExcel && !hasFeature("export_excel")}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${configTab === "data" ? "bg-[#682722] text-white shadow-xs" : "bg-[#FAF7F4] text-slate-700 hover:bg-slate-200"}`}
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>استيراد وتصدير البيانات</span>
+                </button>}
+
+              {canManageSync && <button
                   type="button"
                   onClick={() => setShowDataSyncModal(true)}
                   className="px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white shadow-xs"
@@ -1053,7 +1110,7 @@ export default function AdminManager({
                 >
                   <Cloud className="w-4 h-4 text-[#FFC217]" />
                   <span>مركز المزامنة السحابية ☁️</span>
-                </button>
+                </button>}
 
                 {canCreateDailyReport && (
                   <button
@@ -1067,7 +1124,7 @@ export default function AdminManager({
                   </button>
                 )}
 
-                <button
+                {canManageSync && <button
                   type="button"
                   onClick={() => setShowDataSyncModal(true)}
                   className="px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer bg-gradient-to-r from-purple-700 to-indigo-800 hover:from-purple-800 hover:to-indigo-900 text-white shadow-xs"
@@ -1075,7 +1132,7 @@ export default function AdminManager({
                 >
                   <GitBranch className="w-4 h-4 text-purple-200" />
                   <span>تحديث الكود (GitHub) 🐙</span>
-                </button>
+                </button>}
 
                 {isSuperAdmin && (
                   <button
@@ -1095,7 +1152,7 @@ export default function AdminManager({
             </div>
 
             {/* SUBTAB 1: DEPARTMENTS */}
-            {configTab === "depts" && (
+            {configTab === "depts" && canManageStructure && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between mb-2">
                   <div>
@@ -1157,7 +1214,7 @@ export default function AdminManager({
             )}
 
             {/* SUBTAB 2: SECTIONS */}
-            {configTab === "sections" && (
+            {configTab === "sections" && canManageStructure && (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
                   <div>
@@ -1229,7 +1286,7 @@ export default function AdminManager({
             )}
 
             {/* SUBTAB 3: UNIFIED ROLES */}
-            {configTab === "roles" && (
+            {configTab === "roles" && canManageRoles && (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
                   <div>
@@ -1397,7 +1454,7 @@ export default function AdminManager({
             )}
 
             {/* SUBTAB 4: CATEGORIES CATALOG */}
-            {configTab === "categories" && (
+            {configTab === "categories" && canManageStructure && (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
                   <div>
@@ -1515,12 +1572,31 @@ export default function AdminManager({
             )}
 
             {/* SUBTAB 5: PERMISSIONS MATRIX */}
-            {configTab === "matrix" && (
+            {configTab === "matrix" && canManageRoles && (
               <PermissionsMatrixView
                 roles={roles}
                 permissionsMatrix={permissionsMatrix}
                 currentUser={currentUser}
+                canManageRoles={isSuperAdmin || isGeneralAdmin || hasFeature("manage_roles")}
               />
+            )}
+
+            {configTab === "data" && (canImportExcel || hasFeature("export_excel")) && (
+              <section className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-5" dir="rtl">
+                <div>
+                  <h4 className="text-base font-black text-[#1B1111]">تهيئة ونسخ البيانات المحلية</h4>
+                  <p className="mt-1 text-xs text-slate-500">استيراد ملفات Excel للهيكل والمستخدمين والتصنيفات، أو تنزيل نسخة من جداول قاعدة البيانات المحلية.</p>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  {canImportExcel && <button type="button" onClick={() => setShowExcelImport(true)} className="px-5 py-3 rounded-2xl bg-[#682722] hover:bg-[#7D3029] text-white text-sm font-black flex items-center gap-2">
+                    <FileSpreadsheet className="w-4 h-4" /> تهيئة من ملفات Excel
+                  </button>}
+                  {(isSuperAdmin || isGeneralAdmin || hasFeature("export_excel")) && <a href="/api/system/export-all-local" className="px-5 py-3 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-black flex items-center gap-2">
+                    <Download className="w-4 h-4" /> تصدير كل الجداول المحلية إلى Excel
+                  </a>}
+                </div>
+                <p className="text-[11px] text-slate-500">ملف التصدير يجمع جداول قاعدة البيانات في مصنف Excel واحد، ويمكن حفظه كنسخة احتياطية قبل التطوير.</p>
+              </section>
             )}
 
             {/* SUBTAB 6: RESET DATABASE */}
@@ -2120,6 +2196,7 @@ export default function AdminManager({
                       
                       <div className="flex flex-wrap items-center gap-2">
                         {/* خيار 1: إسناد لشخص إضافي */}
+                        {hasActionFeature("additional_assignment") && (
                         <button
                           type="button"
                           onClick={() => {
@@ -2133,8 +2210,10 @@ export default function AdminManager({
                           <UserPlus className="w-3.5 h-3.5 text-blue-600" />
                           <span>إسناد لشخص إضافي</span>
                         </button>
+                        )}
 
                         {/* خيار 2: كتابة ملاحظة أو تنبيه */}
+                        {hasActionFeature("write_in_progress_note") && (
                         <button
                           type="button"
                           onClick={() => {
@@ -2147,8 +2226,10 @@ export default function AdminManager({
                           <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
                           <span>كتابة ملاحظة للمنفذين</span>
                         </button>
+                        )}
 
                         {/* خيار 3: إغلاق المهمة بالكامل */}
+                        {hasActionFeature("close_in_progress_case") && (
                         <button
                           type="button"
                           onClick={() => {
@@ -2161,6 +2242,7 @@ export default function AdminManager({
                           <CheckCircle2 className="w-3.5 h-3.5 text-[#682722]" />
                           <span>إغلاق المهمة</span>
                         </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2290,13 +2372,13 @@ export default function AdminManager({
 
                       {/* Approval Actions */}
                       <div className="flex flex-wrap gap-2 pt-3 border-t justify-end">
-                        {userPermissions?.can_review === 'none' ? (
+                        {!hasActionFeature("review_approve") && !hasActionFeature("review_round_bump") && userPermissions?.can_close === 'none' ? (
                           <span className="text-xs font-bold text-slate-400 py-2">
                             (غير مصرح لك باعتماد أو إعادة توجيه المهام)
                           </span>
                         ) : (
                           <>
-                            <button
+                            {hasActionFeature("review_approve") && <button
                               type="button"
                               onClick={() => handleApprove(item)}
                               disabled={isLoading}
@@ -2305,8 +2387,8 @@ export default function AdminManager({
                             >
                               <CheckCircle2 className="w-4 h-4" />
                               <span>اعتماد الرد</span>
-                            </button>
-                            <button
+                            </button>}
+                            {hasActionFeature("review_round_bump") && <button
                               type="button"
                               onClick={() => {
                                 setReassignNotes("");
@@ -2319,7 +2401,7 @@ export default function AdminManager({
                             >
                               <RotateCcw className="w-4 h-4" />
                               <span>استكمال المهمة</span>
-                            </button>
+                            </button>}
                             {userPermissions?.can_close !== 'none' && (
                               <button
                                 type="button"
@@ -2441,6 +2523,39 @@ export default function AdminManager({
           </div>
         )}
 
+        {activeMenu === "my_executors" && hasFeatureAccess("view_executor_directory") && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-5">
+              <h3 className="text-base font-black text-[#1B1111] flex items-center gap-2">
+                <Users className="w-5 h-5 text-[#D49A3D]" />
+                منفذو الإدارة الميدانيون ({fieldRoles.length})
+              </h3>
+              <p className="text-xs text-slate-500 font-semibold mt-1">دليل الاطلاع على المنفذين المتاحين ضمن نطاق صلاحيتك.</p>
+            </div>
+            {fieldRoles.length === 0 ? (
+              <div className="bg-white rounded-3xl p-10 text-center border border-slate-200 text-sm font-bold text-slate-500">لا يوجد منفذون ميدانيون ضمن النطاق.</div>
+            ) : (
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-[#FAF7F4] text-slate-600">
+                    <tr><th className="p-3">الاسم</th><th className="p-3">الإدارة</th><th className="p-3">المسمى الوظيفي</th><th className="p-3">رقم المستخدم</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {fieldRoles.map((executor) => (
+                      <tr key={executor.id}>
+                        <td className="p-3 font-black text-slate-800">{executor.full_name}</td>
+                        <td className="p-3">{executor.department_name}</td>
+                        <td className="p-3">{executor.job_title || "منفذ ميداني"}</td>
+                        <td className="p-3 font-mono">{executor.user_number || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ============================================================== */}
         {/* 📚 ALL CASES (السجل العام المركزي)                              */}
         {/* ============================================================== */}
@@ -2456,7 +2571,7 @@ export default function AdminManager({
               </div>
 
               {/* Excel Export Button */}
-              <button
+              {hasFeature("export_excel") && <button
                 type="button"
                 onClick={handleExportCasesExcel}
                 disabled={exportingExcel}
@@ -2469,7 +2584,7 @@ export default function AdminManager({
                   <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
                 )}
                 <span>تصدير السجل التراكمي (Excel)</span>
-              </button>
+              </button>}
             </div>
 
             {/* Filter and Search Bar */}
@@ -2637,6 +2752,7 @@ export default function AdminManager({
                       <th className="py-3 px-4">رمز المرور (PIN)</th>
                       <th className="py-3 px-4 text-center">إكسل</th>
                       <th className="py-3 px-4 text-center">التقرير اليومي</th>
+                      <th className="py-3 px-4 text-center">أرشيف التقارير</th>
                       <th className="py-3 px-4 text-center">الحالة</th>
                       <th className="py-3 px-4 text-center">إجراءات</th>
                     </tr>
@@ -2738,6 +2854,31 @@ export default function AdminManager({
                               }
                             >
                               <FileText className="w-4 h-4" />
+                            </button>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <button
+                              onClick={async () => {
+                                const res = await toggleUserDailyArchivePermissionAction(u.id);
+                                if (res.success) {
+                                  showNotification("success", res.message || "تم تعديل صلاحية أرشيف التقارير بنجاح");
+                                  router.refresh();
+                                } else {
+                                  showNotification("error", res.error || "فشل تعديل الصلاحية");
+                                }
+                              }}
+                              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                u.can_view_daily_archive === 1
+                                  ? "text-blue-600 bg-blue-50 hover:bg-blue-100 ring-1 ring-blue-300"
+                                  : "text-slate-300 hover:text-slate-500 bg-slate-50"
+                              }`}
+                              title={
+                                u.can_view_daily_archive === 1
+                                  ? "صلاحية الاطلاع على أرشيف التقارير: مفعّلة (انقر للتعطيل)"
+                                  : "صلاحية الاطلاع على أرشيف التقارير: معطّلة (انقر للتفعيل)"
+                              }
+                            >
+                              <Clock className="w-4 h-4" />
                             </button>
                           </td>
                           <td className="py-3 px-4 text-center">
@@ -3561,6 +3702,11 @@ export default function AdminManager({
                 <label htmlFor="excel_perm" className="font-bold text-slate-700 cursor-pointer">منح صلاحية تصدير تقارير الإكسل</label>
               </div>
 
+              <div className="flex items-center gap-2 pt-1">
+                <input type="checkbox" name="can_view_daily_archive" value="1" id="archive_perm" />
+                <label htmlFor="archive_perm" className="font-bold text-slate-700 cursor-pointer">منح صلاحية الاطلاع على أرشيف التقارير (لإدارته)</label>
+              </div>
+
               <div className="flex justify-end gap-2 pt-2 border-t">
                 <button type="button" onClick={() => setShowAddUserModal(false)} className="px-4 py-2 text-slate-600 font-bold">إلغاء</button>
                 <button
@@ -3707,6 +3853,18 @@ export default function AdminManager({
                   onChange={(e) => setUserFormCanExcel(e.target.checked)}
                 />
                 <label htmlFor="edit_excel_perm" className="font-bold text-slate-700 cursor-pointer">منح صلاحية تصدير تقارير الإكسل</label>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  name="can_view_daily_archive"
+                  value="1"
+                  id="edit_archive_perm"
+                  checked={userFormCanArchive}
+                  onChange={(e) => setUserFormCanArchive(e.target.checked)}
+                />
+                <label htmlFor="edit_archive_perm" className="font-bold text-slate-700 cursor-pointer">منح صلاحية الاطلاع على أرشيف التقارير (لإدارته)</label>
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t">
@@ -4304,7 +4462,9 @@ export default function AdminManager({
           setShowDailyReportModal(true);
         }}
         canCreateReport={canCreateDailyReport}
+        canExportReports={hasActionFeature("export_excel")}
       />
+      <ExcelImportModal isOpen={showExcelImport} onClose={() => setShowExcelImport(false)} />
 
     </div>
   );

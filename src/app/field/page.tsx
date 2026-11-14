@@ -2,12 +2,14 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import Navbar from "@/components/Navbar";
+import { getUserEffectivePermissions } from "@/app/actions/capa";
 import FieldQueue from "./FieldQueue";
 import { Wrench, CheckCircle, Sparkles } from "lucide-react";
 
 export default async function FieldDashboard() {
   const session = await getSession();
   if (!session) redirect("/login");
+  const userPermissions = await getUserEffectivePermissions(session);
   if (
     session.role !== "field_agent" &&
     session.role !== "admin" &&
@@ -16,6 +18,7 @@ export default async function FieldDashboard() {
   ) {
     redirect("/");
   }
+  if (userPermissions.features.field_execute === "none" && userPermissions.features.field_feedback === "none") redirect("/");
 
   // Fetch all active assignments for this agent (assigned directly by user_id OR generally to department)
   // Dynamic query! Inspector name is strictly excluded from query for privacy!
@@ -52,12 +55,14 @@ export default async function FieldDashboard() {
     ORDER BY a.round DESC, a.case_number DESC
   `;
 
-  const asgRes = await db.execute({
-    sql: query,
-    args: [session.id, session.department_code],
-  });
+  const assignmentRows = userPermissions.features.field_execute === "none"
+    ? []
+    : (await db.execute({
+        sql: query,
+        args: [session.id, session.department_code],
+      })).rows;
 
-  const assignments = asgRes.rows.map((r: any) => ({
+  const assignments = assignmentRows.map((r: any) => ({
     asgRowId: Number(r.asg_row_id),
     asgId: String(r.asg_id),
     caseId: Number(r.case_id),
@@ -84,7 +89,7 @@ export default async function FieldDashboard() {
   }));
 
   // Fetch closed cases with administrative feedback for this agent
-  const closedRes = await db.execute({
+  const closedRows = userPermissions.features.field_feedback === "none" ? [] : (await db.execute({
     sql: `
       SELECT 
         c.id, c.case_number, c.location_name, c.nc_name, c.description, c.root_cause, c.inspector_notes, c.closed_at, 
@@ -98,9 +103,9 @@ export default async function FieldDashboard() {
       ORDER BY c.closed_at DESC LIMIT 20
     `,
     args: [session.id, session.department_code],
-  });
+  })).rows;
 
-  const closedCases = closedRes.rows.map((r: any) => ({
+  const closedCases = closedRows.map((r: any) => ({
     id: Number(r.id),
     caseNumber: Number(r.case_number),
     locationName: String(r.location_name),
@@ -120,7 +125,7 @@ export default async function FieldDashboard() {
 
   return (
     <div className="min-h-screen bg-[#FAF7F4] flex flex-col">
-      <Navbar user={session} />
+      <Navbar user={session} userPermissions={JSON.parse(JSON.stringify(userPermissions))} />
 
       <main className="max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 flex-1">
         
@@ -160,6 +165,7 @@ export default async function FieldDashboard() {
           newAssignments={newAssignments}
           returnedAssignments={returnedAssignments}
           closedCases={closedCases}
+          canExecute={["full", "exclusive", "dept_only"].includes(userPermissions.features.field_execute)}
         />
 
       </main>

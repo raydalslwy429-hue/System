@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Cloud, HardDrive, Loader2, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
+import { Cloud, HardDrive, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 import { getDatabaseModeAction, toggleDatabaseModeAction } from "@/app/actions/system_mode";
 import { useRouter } from "next/navigation";
 
@@ -13,7 +13,7 @@ export default function SystemModeToggle({
   onModeChanged?: (mode: "local" | "cloud") => void;
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"local" | "cloud">("local");
+  const [mode, setMode] = useState<"local" | "cloud" | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -22,6 +22,13 @@ export default function SystemModeToggle({
     let mounted = true;
     getDatabaseModeAction().then((m) => {
       if (mounted) setMode(m);
+    }).catch((err) => {
+      if (mounted) {
+        setToast({
+          type: "error",
+          message: err instanceof Error ? err.message : "تعذر قراءة وضع قاعدة البيانات المحفوظ",
+        });
+      }
     });
 
     const handleExternalChange = (e: any) => {
@@ -38,7 +45,7 @@ export default function SystemModeToggle({
   }, []);
 
   const handleToggle = async () => {
-    if (isLoading) return;
+    if (isLoading || mode === null) return;
     setIsLoading(true);
     setToast(null);
 
@@ -81,21 +88,22 @@ export default function SystemModeToggle({
   };
 
   const isCloud = mode === "cloud";
+  const isModeReady = mode !== null;
 
   if (variant === "navbar") {
     return (
       <div className="relative">
         <button
           onClick={handleToggle}
-          disabled={isLoading}
+          disabled={isLoading || !isModeReady}
           className={`px-3 py-1.5 rounded-2xl border transition-all flex items-center gap-2 cursor-pointer shadow-sm select-none ${
             isCloud
               ? "bg-emerald-950/80 border-emerald-500/50 hover:border-emerald-400 text-emerald-200"
               : "bg-[#2A1C16] border-[#D49A3D]/40 hover:border-[#D49A3D] text-[#FFC217]"
-          } ${isLoading ? "opacity-75 cursor-wait" : ""}`}
-          title="انقر للتبديل بين وضع الأونلاين (السحابة) ووضع الأوفلاين (المحلي)"
+          } ${isLoading || !isModeReady ? "opacity-75 cursor-wait" : ""}`}
+          title={isModeReady ? "انقر للتبديل بين الوضع السحابي والمحلي" : "جارٍ قراءة وضع قاعدة البيانات المحفوظ"}
         >
-          {isLoading ? (
+          {isLoading || !isModeReady ? (
             <Loader2 className="w-4 h-4 animate-spin text-[#FFC217]" />
           ) : isCloud ? (
             <Cloud className="w-4 h-4 text-emerald-400 animate-pulse" />
@@ -105,16 +113,16 @@ export default function SystemModeToggle({
 
           <div className="flex flex-col text-right leading-none">
             <span className="text-[11px] font-black tracking-tight">
-              {isLoading ? "جاري الفحص..." : isCloud ? "أونلاين (سحابي)" : "أوفلاين (محلي)"}
+              {!isModeReady ? "جارٍ قراءة الوضع..." : isLoading ? "جاري الفحص..." : isCloud ? "أونلاين (سحابي)" : "أوفلاين (محلي)"}
             </span>
             <span className="text-[9px] opacity-75 font-semibold mt-0.5">
-              {isCloud ? "سحابة Turso نشطة" : "قاعدة البيانات local.db"}
+              {!isModeReady ? "إعداد النظام" : isCloud ? "سحابة Turso نشطة" : "قاعدة البيانات local.db"}
             </span>
           </div>
 
           <span
             className={`w-2 h-2 rounded-full mr-1 shrink-0 ${
-              isLoading
+              isLoading || !isModeReady
                 ? "bg-amber-400 animate-ping"
                 : isCloud
                 ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
@@ -156,7 +164,7 @@ export default function SystemModeToggle({
               isCloud ? "bg-emerald-500/20 text-emerald-400" : "bg-[#D49A3D]/20 text-[#FFC217]"
             }`}
           >
-            {isCloud ? <Cloud className="w-6 h-6" /> : <HardDrive className="w-6 h-6" />}
+            {!isModeReady ? <Loader2 className="w-6 h-6 animate-spin" /> : isCloud ? <Cloud className="w-6 h-6" /> : <HardDrive className="w-6 h-6" />}
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -165,16 +173,18 @@ export default function SystemModeToggle({
               </h4>
               <span
                 className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
-                  isCloud
+                  isModeReady && isCloud
                     ? "bg-emerald-950 text-emerald-300 border-emerald-500/40"
                     : "bg-amber-950 text-amber-300 border-amber-500/40"
                 }`}
               >
-                {isCloud ? "🟢 أونلاين (سحابة Turso)" : "💻 أوفلاين (قاعدة البيانات المحلية)"}
+                {!isModeReady ? "جارٍ قراءة الوضع..." : isCloud ? "🟢 أونلاين (سحابة Turso)" : "💻 أوفلاين (قاعدة البيانات المحلية)"}
               </span>
             </div>
             <p className="text-xs text-slate-300 font-semibold mt-1">
-              {isCloud
+              {!isModeReady
+                ? "يتم تحميل وضع قاعدة البيانات المحفوظ على هذا الجهاز."
+                : isCloud
                 ? "التطبيق يقرأ ويكتب مباشرة في سحابة Turso الحية. مناسب للعمل المشترك والمزامنة المباشرة."
                 : "التطبيق يقرأ ويكتب محلياً على local.db في هذا الكمبيوتر. يمكنك العمل بدون إنترنت تماماً."}
             </p>
@@ -185,14 +195,14 @@ export default function SystemModeToggle({
         <div className="flex items-center gap-3">
           <button
             onClick={handleToggle}
-            disabled={isLoading}
+            disabled={isLoading || !isModeReady}
             className={`px-4 py-2.5 rounded-xl font-black text-xs flex items-center gap-2 cursor-pointer shadow-md transition-all ${
-              isCloud
+              isModeReady && isCloud
                 ? "bg-gradient-to-r from-amber-600 to-[#D49A3D] text-[#1B1111] hover:brightness-110"
                 : "bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:brightness-110"
             } ${isLoading ? "opacity-60 cursor-wait" : ""}`}
           >
-            {isLoading ? (
+            {isLoading || !isModeReady ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : isCloud ? (
               <HardDrive className="w-4 h-4" />
@@ -200,7 +210,9 @@ export default function SystemModeToggle({
               <Cloud className="w-4 h-4" />
             )}
             <span>
-              {isLoading
+              {!isModeReady
+                ? "جارٍ تحميل الوضع..."
+                : isLoading
                 ? "جاري فحص الاتصال والتبديل..."
                 : isCloud
                 ? "التحويل للوضع المحلي (أوفلاين) 💻"
