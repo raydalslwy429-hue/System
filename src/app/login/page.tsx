@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { loginAction } from "@/app/actions/capa";
-import { KeyRound, User, Loader2, ArrowLeft, CheckCircle2, UserCheck, Sparkles, Building2 } from "lucide-react";
+import { KeyRound, User, Loader2, ArrowLeft } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,7 +18,7 @@ export default function LoginPage() {
     const finalPin = pinToUse || pin;
 
     if (!finalNum.trim()) {
-      setError("الرجاء إدخال رقم المستخدم (مثال: 101)");
+      setError("الرجاء إدخال رقم المستخدم");
       setActiveField("userNumber");
       return;
     }
@@ -79,15 +79,6 @@ export default function LoginPage() {
     setError(null);
   };
 
-  const quickRoles = [
-    { name: "م. رائد الصلوي", userNumber: "101", role: "الإدارة العامة العليا", pin: "2222", color: "bg-amber-500/10 text-amber-900 border-amber-300" },
-    { name: "أحمد اللبني", userNumber: "102", role: "مفتش جودة الأغذية", pin: "1111", color: "bg-blue-500/10 text-blue-900 border-blue-300" },
-    { name: "خالد الجلاب", userNumber: "108", role: "منفذ ميداني (المساء)", pin: "4444", color: "bg-purple-500/10 text-purple-900 border-purple-300" },
-    { name: "أحمد الجلاب", userNumber: "107", role: "منفذ ميداني (الصباح)", pin: "3333", color: "bg-emerald-500/10 text-emerald-900 border-emerald-300" },
-    { name: "ابو الفضل الجلاب", userNumber: "110", role: "إداري النظام", pin: "9999", color: "bg-[#682722]/10 text-[#682722] border-[#682722]/30" },
-    { name: "رائد المنصوري", userNumber: "112", role: "مدير صيانة", pin: "0000", color: "bg-orange-500/10 text-orange-900 border-orange-300" },
-  ];
-
   return (
     <div className="min-h-screen bg-[#1B1111] relative overflow-hidden flex flex-col justify-center items-center p-4">
       {/* Background glow and subtle architectural backdrop */}
@@ -143,7 +134,7 @@ export default function LoginPage() {
                 setUserNumber(e.target.value);
                 setError(null);
               }}
-              placeholder="مثال: 101"
+              placeholder="أدخل رقم المستخدم"
               className={`w-full h-12 px-4 text-center font-black text-lg bg-white border-2 rounded-2xl transition-all focus:outline-none ${
                 activeField === "userNumber"
                   ? "border-[#D49A3D] ring-2 ring-[#D49A3D]/30 shadow-md"
@@ -193,7 +184,7 @@ export default function LoginPage() {
           type="button"
           onClick={() => handleLogin()}
           disabled={loading}
-          className="w-full h-12 mb-4 bg-gradient-to-r from-[#682722] via-[#85322c] to-[#682722] hover:brightness-110 active:scale-[0.99] text-white font-black text-sm rounded-2xl shadow-lg shadow-[#682722]/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+          className="w-full h-12 mb-4 bg-gradient-to-r from-[#682722] via-[#85322c] to-[#682722] hover:brightness-110 active:scale-[0.99] text-white font-black text-sm rounded-2xl shadow-lg shadow-[#682722]/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
         >
           {loading ? (
             <>
@@ -209,14 +200,14 @@ export default function LoginPage() {
         </button>
 
         {/* Tactile Keypad */}
-        <div className="grid grid-cols-3 gap-2 mb-4">
+        <div className="grid grid-cols-3 gap-2">
           {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
             <button
               key={digit}
               type="button"
               onClick={() => handleKeyPress(digit.toString())}
               disabled={loading}
-              className="h-11 rounded-xl bg-white hover:bg-amber-50 active:bg-amber-100 text-[#1B1111] font-black text-lg shadow-xs border border-slate-200 hover:border-[#D49A3D] transition-all flex items-center justify-center disabled:opacity-50"
+              className="h-11 rounded-xl bg-white hover:bg-amber-50 active:bg-amber-100 text-[#1B1111] font-black text-lg shadow-xs border border-slate-200 hover:border-[#D49A3D] transition-all flex items-center justify-center disabled:opacity-50 cursor-pointer"
             >
               {digit}
             </button>
@@ -226,7 +217,7 @@ export default function LoginPage() {
             type="button"
             onClick={handleClear}
             disabled={loading}
-            className="h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs transition-all flex items-center justify-center"
+            className="h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs transition-all flex items-center justify-center cursor-pointer"
           >
             مسح
           </button>
@@ -235,7 +226,7 @@ export default function LoginPage() {
             type="button"
             onClick={() => handleKeyPress("0")}
             disabled={loading}
-            className="h-11 rounded-xl bg-white hover:bg-amber-50 active:bg-amber-100 text-[#1B1111] font-black text-lg shadow-xs border border-slate-200 hover:border-[#D49A3D] transition-all flex items-center justify-center disabled:opacity-50"
+            className="h-11 rounded-xl bg-white hover:bg-amber-50 active:bg-amber-100 text-[#1B1111] font-black text-lg shadow-xs border border-slate-200 hover:border-[#D49A3D] transition-all flex items-center justify-center disabled:opacity-50 cursor-pointer"
           >
             0
           </button>
@@ -244,43 +235,10 @@ export default function LoginPage() {
             type="button"
             onClick={handleBackspace}
             disabled={loading}
-            className="h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs transition-all flex items-center justify-center"
+            className="h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs transition-all flex items-center justify-center cursor-pointer"
           >
             ← حذف
           </button>
-        </div>
-
-        {/* Quick Test Accounts */}
-        <div className="border-t border-slate-200/80 pt-3">
-          <p className="text-[11px] font-black text-slate-500 mb-2 text-center flex items-center justify-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-[#D49A3D]" />
-            <span>حسابات تجريبية سريعة (انقر للدخول المباشر):</span>
-          </p>
-
-          <div className="grid grid-cols-2 gap-2">
-            {quickRoles.map((user) => (
-              <button
-                key={user.userNumber}
-                type="button"
-                onClick={() => {
-                  setUserNumber(user.userNumber);
-                  setPin(user.pin);
-                  handleLogin(user.userNumber, user.pin);
-                }}
-                disabled={loading}
-                className={`p-2 rounded-xl border text-right transition-all hover:scale-[1.02] flex items-center justify-between bg-white hover:border-[#D49A3D] ${user.color}`}
-              >
-                <div className="truncate">
-                  <p className="text-xs font-black truncate">{user.name}</p>
-                  <p className="text-[10px] text-slate-500 font-semibold truncate">{user.role}</p>
-                </div>
-                <div className="text-left font-mono text-[10px] font-black leading-tight pl-1">
-                  <span className="block text-[#682722]">#{user.userNumber}</span>
-                  <span className="block text-slate-400">PIN: {user.pin}</span>
-                </div>
-              </button>
-            ))}
-          </div>
         </div>
 
       </div>
