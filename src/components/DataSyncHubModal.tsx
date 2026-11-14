@@ -85,7 +85,12 @@ export default function DataSyncHubModal({ isOpen, onClose }: DataSyncHubModalPr
   // 1. Export Local Database (.db file download)
   const handleExportDb = () => {
     setFeedback(null);
-    window.location.href = "/api/system/export-db";
+    const link = document.createElement("a");
+    link.href = "/api/system/export-db";
+    link.download = `marasim_local_db_${new Date().toISOString().slice(0, 10)}.db`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
     setFeedback({
       type: "success",
       message: "📥 بدأ تنزيل ملف قاعدة البيانات المحلية (local.db). يمكنك حفظه ونقله لأي جهاز للمتابعة!",
@@ -139,7 +144,12 @@ export default function DataSyncHubModal({ isOpen, onClose }: DataSyncHubModalPr
   // 3. Export Project Code (ZIP download)
   const handleExportCode = () => {
     setFeedback(null);
-    window.location.href = "/api/system/export-code";
+    const link = document.createElement("a");
+    link.href = "/api/system/export-code";
+    link.download = `marasim_project_code_${new Date().toISOString().slice(0, 10)}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
     setFeedback({
       type: "success",
       message: "📦 بدأ تنزيل حزمة كود وملفات المشروع (ZIP). تحتوي على كافة الشاشات والتصاميم والقوالب لنقلها والمتابعة بأي مكان!",
@@ -267,7 +277,17 @@ export default function DataSyncHubModal({ isOpen, onClose }: DataSyncHubModalPr
           {/* ============================================================== */}
           {/* SECTION 1: INTERACTIVE RUNTIME MODE SWITCH (ONLINE / OFFLINE)  */}
           {/* ============================================================== */}
-          <SystemModeToggle variant="full" />
+          <SystemModeToggle
+            variant="full"
+            onModeChanged={(m) => {
+              setFeedback({
+                type: "success",
+                message: m === "cloud"
+                  ? "🟢 النظام متصل الآن بقاعدة البيانات السحابية Turso (أونلاين)."
+                  : "💻 النظام يعمل الآن على قاعدة البيانات المحلية local.db (أوفلاين)."
+              });
+            }}
+          />
 
           {/* ============================================================== */}
           {/* SECTION 2: LOCAL DATABASE EXPORT & IMPORT (قاعدة البيانات)       */}

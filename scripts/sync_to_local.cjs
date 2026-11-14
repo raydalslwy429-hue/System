@@ -45,7 +45,8 @@ async function setupLocalDb() {
     `CREATE TABLE IF NOT EXISTS forms_templates (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, title TEXT NOT NULL, description TEXT, icon TEXT DEFAULT 'clipboard', allowed_roles TEXT DEFAULT 'all', fields_schema TEXT, status TEXT DEFAULT 'active' CHECK(status IN ('active', 'disabled')), created_at DATETIME DEFAULT CURRENT_TIMESTAMP, version INTEGER DEFAULT 1, department_code TEXT DEFAULT 'all', allowed_users_json TEXT DEFAULT "all")`,
     `CREATE TABLE IF NOT EXISTS locations (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, department_code TEXT NOT NULL, status TEXT DEFAULT 'active' CHECK(status IN ('active', 'disabled')), created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
     `CREATE TABLE IF NOT EXISTS role_permissions_matrix (id INTEGER PRIMARY KEY AUTOINCREMENT, role_code TEXT NOT NULL UNIQUE, role_name TEXT NOT NULL, permissions_json TEXT NOT NULL DEFAULT '{}', updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
-    `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, user_number INTEGER UNIQUE, full_name TEXT NOT NULL, pin_code TEXT NOT NULL, role TEXT NOT NULL, department_code TEXT, department_name TEXT, status TEXT DEFAULT 'active', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, job_title TEXT, is_protected INTEGER DEFAULT 0, can_export_excel INTEGER DEFAULT 0, custom_role_id INTEGER, custom_role_name TEXT)`
+    `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, user_number INTEGER UNIQUE, full_name TEXT NOT NULL, pin_code TEXT NOT NULL, role TEXT NOT NULL, department_code TEXT, department_name TEXT, status TEXT DEFAULT 'active', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, job_title TEXT, is_protected INTEGER DEFAULT 0, can_export_excel INTEGER DEFAULT 0, custom_role_id INTEGER, custom_role_name TEXT, can_create_daily_report INTEGER DEFAULT 1, can_view_daily_archive INTEGER DEFAULT 0)`,
+    `CREATE TABLE IF NOT EXISTS daily_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, serial_number TEXT NOT NULL UNIQUE, submitter_id INTEGER NOT NULL, submitter_name TEXT NOT NULL, submitter_role TEXT NOT NULL, department_code TEXT NOT NULL, department_name TEXT NOT NULL, location_name TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL, recipient TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`
   ];
 
   for (const t of tables) {
@@ -131,7 +132,7 @@ async function setupLocalDb() {
       if (!u.full_name || !u.pin_code) continue;
       const isProtected = (u.pin_code === "2222" || Number(u.id) === 1 || Number(u.is_protected) === 1) ? 1 : 0;
       await client.execute({
-        sql: "INSERT OR REPLACE INTO users (id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, is_protected, can_export_excel, custom_role_id, custom_role_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        sql: "INSERT OR REPLACE INTO users (id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, is_protected, can_export_excel, custom_role_id, custom_role_name, can_create_daily_report, can_view_daily_archive) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         args: [
           u.id || null,
           u.user_number || null,
@@ -145,7 +146,9 @@ async function setupLocalDb() {
           isProtected,
           u.can_export_excel ? 1 : 0,
           u.custom_role_id || null,
-          u.custom_role_name || null
+          u.custom_role_name || null,
+          u.can_create_daily_report !== undefined ? (u.can_create_daily_report ? 1 : 0) : 1,
+          u.can_view_daily_archive ? 1 : 0
         ]
       });
     }

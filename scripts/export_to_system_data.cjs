@@ -199,16 +199,45 @@ async function exportAll() {
     const localDbPath = path.resolve(__dirname, '..', 'local.db');
     const localClient = createClient({ url: `file:${localDbPath.replace(/\\/g, '/')}` });
 
-    const operationalTables = ['cases_master', 'case_assignments', 'case_executions', 'admin_decisions', 'forms_responses', 'forms_answers', 'audit_logs'];
+    // Helper to query cloud with retry on transient network glitch
+    async function queryWithRetry(sql, retries = 3) {
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          return await client.execute(sql);
+        } catch (err) {
+          if (attempt === retries) throw err;
+          console.warn(`Retry ${attempt}/${retries} for query...`);
+          await new Promise((resolve) => setTimeout(resolve, 800));
+        }
+      }
+    }
+
+    const operationalTables = [
+      'cases_master',
+      'case_assignments',
+      'case_executions',
+      'admin_decisions',
+      'forms_responses',
+      'forms_answers',
+      'audit_logs',
+      'daily_reports',
+      'role_permissions_matrix'
+    ];
     for (const t of operationalTables) {
       try {
-        const cloudRows = await client.execute(`SELECT * FROM ${t}`);
-        if (cloudRows.rows && cloudRows.rows.length > 0) {
+        const cloudRows = await queryWithRetry(`SELECT * FROM ${t}`);
+        if (cloudRows && cloudRows.rows && cloudRows.rows.length > 0) {
           const cols = Object.keys(cloudRows.rows[0]);
+          const quotedCols = cols.map(c => `"${c}"`);
           const placeholders = cols.map(() => '?').join(', ');
-          const sql = `INSERT OR REPLACE INTO ${t} (${cols.join(', ')}) VALUES (${placeholders})`;
-          for (const row of cloudRows.rows) {
-            await localClient.execute({ sql, args: cols.map(c => row[c]) });
+          const sql = `INSERT OR REPLACE INTO "${t}" (${quotedCols.join(', ')}) VALUES (${placeholders})`;
+          const stmts = cloudRows.rows.map(row => ({
+            sql,
+            args: cols.map(c => row[c])
+          }));
+          // Batch in chunks of 50
+          for (let i = 0; i < stmts.length; i += 50) {
+            await localClient.batch(stmts.slice(i, i + 50), "write");
           }
           console.log(`✔ Synced ${cloudRows.rows.length} rows for ${t} into local.db.`);
         }

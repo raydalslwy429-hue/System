@@ -16,6 +16,7 @@ async function hasFeaturePermission(session: UserSession | null, key: string): P
   if (session.role === "super_admin" || session.role === "general_admin") return true;
   const level = (await getUserEffectivePermissions(session)).features[key];
   if (["full", "exclusive"].includes(level)) return true;
+  if (isAuthorizedAdmin(session) && (key === "manage_sync" || key === "import_excel") && level !== "none") return true;
   return level === "dept_only" && !key.startsWith("manage_") && key !== "delete_cases";
 }
 
@@ -94,7 +95,7 @@ export async function getUserEffectivePermissions(session: UserSession | null): 
   if (session.can_create_daily_report !== 0) defaultFeatures.create_daily_report = "full";
   if (Number(session.can_view_daily_archive) === 1) defaultFeatures.view_daily_archive = "full";
   defaultFeatures.change_own_pin = "full";
-  if (session.role === "super_admin" || session.role === "general_admin") {
+  if (session.role === "super_admin" || session.role === "general_admin" || session.role === "admin") {
     defaultFeatures.manage_sync = "full";
     defaultFeatures.import_excel = "full";
   }

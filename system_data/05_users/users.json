@@ -8,12 +8,14 @@
     "department_code": "admin",
     "department_name": "الإدارة العامة والحوكمة",
     "status": "active",
-    "created_at": "2026-11-10 06:38:56",
-    "job_title": null,
+    "created_at": "2026-11-14 02:53:58",
+    "job_title": "",
     "is_protected": 1,
     "can_export_excel": 0,
     "custom_role_id": null,
-    "custom_role_name": null
+    "custom_role_name": null,
+    "can_create_daily_report": 1,
+    "can_view_daily_archive": 0
   },
   {
     "id": 2,
@@ -24,12 +26,14 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-10 06:38:56",
-    "job_title": null,
+    "created_at": "2026-11-14 02:53:58",
+    "job_title": "",
     "is_protected": 0,
     "can_export_excel": 0,
     "custom_role_id": null,
-    "custom_role_name": null
+    "custom_role_name": null,
+    "can_create_daily_report": 1,
+    "can_view_daily_archive": 0
   },
   {
     "id": 3,
@@ -40,12 +44,14 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-10 06:38:57",
-    "job_title": null,
+    "created_at": "2026-11-14 02:53:58",
+    "job_title": "",
     "is_protected": 0,
     "can_export_excel": 0,
     "custom_role_id": null,
-    "custom_role_name": null
+    "custom_role_name": null,
+    "can_create_daily_report": 1,
+    "can_view_daily_archive": 0
   },
   {
     "id": 4,
@@ -56,12 +62,14 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-10 06:38:57",
-    "job_title": null,
+    "created_at": "2026-11-14 02:53:58",
+    "job_title": "",
     "is_protected": 0,
     "can_export_excel": 0,
     "custom_role_id": null,
-    "custom_role_name": null
+    "custom_role_name": null,
+    "can_create_daily_report": 1,
+    "can_view_daily_archive": 0
   },
   {
     "id": 5,
@@ -72,12 +80,14 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-10 06:38:58",
-    "job_title": null,
+    "created_at": "2026-11-14 02:53:58",
+    "job_title": "",
     "is_protected": 0,
     "can_export_excel": 0,
     "custom_role_id": null,
-    "custom_role_name": null
+    "custom_role_name": null,
+    "can_create_daily_report": 1,
+    "can_view_daily_archive": 0
   },
   {
     "id": 6,
@@ -88,12 +98,14 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-10 06:38:58",
-    "job_title": null,
+    "created_at": "2026-11-14 02:53:58",
+    "job_title": "",
     "is_protected": 0,
     "can_export_excel": 0,
     "custom_role_id": null,
-    "custom_role_name": null
+    "custom_role_name": null,
+    "can_create_daily_report": 1,
+    "can_view_daily_archive": 0
   },
   {
     "id": 7,
@@ -104,12 +116,14 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-10 06:38:59",
-    "job_title": null,
+    "created_at": "2026-11-14 02:53:58",
+    "job_title": "",
     "is_protected": 0,
     "can_export_excel": 0,
     "custom_role_id": null,
-    "custom_role_name": null
+    "custom_role_name": null,
+    "can_create_daily_report": 1,
+    "can_view_daily_archive": 0
   },
   {
     "id": 8,
@@ -120,12 +134,14 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-10 06:38:59",
-    "job_title": null,
+    "created_at": "2026-11-14 02:53:58",
+    "job_title": "",
     "is_protected": 0,
     "can_export_excel": 0,
     "custom_role_id": null,
-    "custom_role_name": null
+    "custom_role_name": null,
+    "can_create_daily_report": 1,
+    "can_view_daily_archive": 0
   },
   {
     "id": 9,
@@ -136,12 +152,14 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-10 06:38:59",
-    "job_title": null,
+    "created_at": "2026-11-14 02:53:58",
+    "job_title": "",
     "is_protected": 0,
     "can_export_excel": 0,
     "custom_role_id": null,
-    "custom_role_name": null
+    "custom_role_name": null,
+    "can_create_daily_report": 1,
+    "can_view_daily_archive": 0
   },
   {
     "id": 10,
@@ -152,12 +170,14 @@
     "department_code": "dept_maintenance",
     "department_name": "إدارة الخدمات المساندة",
     "status": "active",
-    "created_at": "2026-11-10 06:39:00",
-    "job_title": null,
+    "created_at": "2026-11-14 02:53:58",
+    "job_title": "",
     "is_protected": 0,
     "can_export_excel": 0,
     "custom_role_id": null,
-    "custom_role_name": null
+    "custom_role_name": null,
+    "can_create_daily_report": 1,
+    "can_view_daily_archive": 0
   },
   {
     "id": 11,
@@ -168,12 +188,14 @@
     "department_code": "dept_maintenance",
     "department_name": "إدارة الخدمات المساندة",
     "status": "active",
-    "created_at": "2026-11-10 06:39:00",
-    "job_title": null,
+    "created_at": "2026-11-14 02:53:58",
+    "job_title": "",
     "is_protected": 0,
     "can_export_excel": 0,
     "custom_role_id": null,
-    "custom_role_name": null
+    "custom_role_name": null,
+    "can_create_daily_report": 1,
+    "can_view_daily_archive": 0
   },
   {
     "id": 12,
@@ -184,28 +206,32 @@
     "department_code": "aaa",
     "department_name": "ادارة الانتاج  والجودة الغذائية",
     "status": "active",
-    "created_at": "2026-11-10 06:39:00",
-    "job_title": null,
+    "created_at": "2026-11-14 02:53:58",
+    "job_title": "",
     "is_protected": 0,
     "can_export_excel": 0,
     "custom_role_id": null,
-    "custom_role_name": null
+    "custom_role_name": null,
+    "can_create_daily_report": 1,
+    "can_view_daily_archive": 0
   },
   {
     "id": 15,
     "user_number": 113,
-    "full_name": "اداري",
+    "full_name": "مدير النظام",
     "pin_code": "5544",
     "role": "admin",
     "department_code": "dept_1794252132684",
     "department_name": "ادارة المتابعة  والتطوير",
     "status": "active",
-    "created_at": "2026-11-10 06:39:01",
-    "job_title": "admin",
+    "created_at": "2026-11-14 02:53:58",
+    "job_title": "مدير النظام",
     "is_protected": 0,
     "can_export_excel": 0,
-    "custom_role_id": null,
-    "custom_role_name": null
+    "custom_role_id": 4,
+    "custom_role_name": "مدير النظام",
+    "can_create_daily_report": 1,
+    "can_view_daily_archive": 0
   },
   {
     "id": 16,
@@ -216,11 +242,31 @@
     "department_code": "dept_production",
     "department_name": "إدارة المبيعات والتسويق",
     "status": "active",
-    "created_at": "2026-11-10 06:39:01",
-    "job_title": null,
+    "created_at": "2026-11-14 02:53:58",
+    "job_title": "",
     "is_protected": 0,
     "can_export_excel": 0,
     "custom_role_id": null,
-    "custom_role_name": null
+    "custom_role_name": null,
+    "can_create_daily_report": 1,
+    "can_view_daily_archive": 0
+  },
+  {
+    "id": 17,
+    "user_number": 115,
+    "full_name": "رشاد رشيد",
+    "pin_code": "1122",
+    "role": "admin",
+    "department_code": "dept_1794252132684",
+    "department_name": "ادارة المتابعة  والتطوير",
+    "status": "active",
+    "created_at": "2026-11-14 02:53:58",
+    "job_title": "اداري عام",
+    "is_protected": 0,
+    "can_export_excel": 0,
+    "custom_role_id": 10,
+    "custom_role_name": "اداري عام",
+    "can_create_daily_report": 1,
+    "can_view_daily_archive": 0
   }
 ]

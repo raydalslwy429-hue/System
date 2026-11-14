@@ -61,7 +61,8 @@ export async function toggleDatabaseModeAction(requestedMode?: "local" | "cloud"
 }> {
   const session = await getSession();
   const permissions = await getUserEffectivePermissions(session);
-  if (!session || !(session.role === "super_admin" || session.role === "general_admin" || ["full", "exclusive"].includes(permissions.features.manage_sync))) {
+  const isAllowedAdmin = session?.role === "super_admin" || session?.role === "general_admin" || session?.role === "admin";
+  if (!session || (!isAllowedAdmin && !["full", "exclusive"].includes(permissions.features.manage_sync))) {
     return {
       success: false,
       mode: getPersistedDatabaseMode(),
