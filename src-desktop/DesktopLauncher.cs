@@ -16,6 +16,7 @@ namespace AlMaraseem.Desktop
         private ProgressBar progressBar;
         private string projectRoot = "";
         private int checkCount = 0;
+        private const string CLOUD_URL = "https://system-ok9k.vercel.app/login";
 
         public LauncherForm()
         {
@@ -68,7 +69,7 @@ namespace AlMaraseem.Desktop
             this.Controls.Add(progressBar);
 
             lblStatus = new Label();
-            lblStatus.Text = "جاري التحقق من جاهزية النظام والاتصال بالخادم...";
+            lblStatus.Text = "جاري التحقق من الاتصال السحابي بالنظام...";
             lblStatus.Font = new Font("Segoe UI", 9, FontStyle.Regular);
             lblStatus.ForeColor = Color.FromArgb(210, 210, 210);
             lblStatus.TextAlign = ContentAlignment.MiddleCenter;
@@ -77,7 +78,7 @@ namespace AlMaraseem.Desktop
             this.Controls.Add(lblStatus);
 
             Label lblFooter = new Label();
-            lblFooter.Text = "الإصدار المكتبي v2.0 - بيئة العمل المحلية والسحابية";
+            lblFooter.Text = "الإصدار المكتبي v2.0 - السحابي والمحلي";
             lblFooter.Font = new Font("Segoe UI", 8, FontStyle.Italic);
             lblFooter.ForeColor = Color.FromArgb(150, 130, 120);
             lblFooter.TextAlign = ContentAlignment.MiddleCenter;
@@ -89,17 +90,14 @@ namespace AlMaraseem.Desktop
         private void DetermineProjectRoot()
         {
             string current = AppDomain.CurrentDomain.BaseDirectory;
-            // 1. Check parent (if running from Releases/ folder)
             if (File.Exists(Path.Combine(current, "..", "package.json")))
             {
                 projectRoot = Path.GetFullPath(Path.Combine(current, ".."));
             }
-            // 2. Check current directory
             else if (File.Exists(Path.Combine(current, "package.json")))
             {
                 projectRoot = Path.GetFullPath(current);
             }
-            // 3. Fallback to known installed directory
             else if (Directory.Exists(@"C:\Users\مطعم المراسيم\Downloads\مجلد جديد (5)\marasim_app_latest_ready"))
             {
                 projectRoot = @"C:\Users\مطعم المراسيم\Downloads\مجلد جديد (5)\marasim_app_latest_ready";
@@ -110,12 +108,30 @@ namespace AlMaraseem.Desktop
             }
         }
 
-        private bool IsServerResponsive()
+        private bool IsCloudResponsive()
+        {
+            try
+            {
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(CLOUD_URL);
+                req.Timeout = 3000;
+                req.Method = "GET";
+                using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
+                {
+                    return resp.StatusCode == HttpStatusCode.OK || resp.StatusCode == HttpStatusCode.TemporaryRedirect;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool IsLocalServerResponsive()
         {
             try
             {
                 HttpWebRequest req = (HttpWebRequest)WebRequest.Create("http://localhost:3000/login");
-                req.Timeout = 2500;
+                req.Timeout = 2000;
                 req.Method = "GET";
                 using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
                 {
@@ -132,54 +148,66 @@ namespace AlMaraseem.Desktop
         {
             new Thread(() =>
             {
-                // Check if server is already running
-                if (!IsServerResponsive())
-                {
-                    UpdateStatus("جاري تشغيل خادم المنظومة المحلي في الخلفية...");
-                    try
-                    {
-                        string npmPath = @"C:\Program Files\nodejs\npm.cmd";
-                        if (!File.Exists(npmPath)) npmPath = "npm.cmd";
+                string targetUrl = CLOUD_URL;
 
-                        ProcessStartInfo psi = new ProcessStartInfo();
-                        psi.FileName = npmPath;
-                        // Use production start if built, otherwise dev
-                        bool hasBuild = Directory.Exists(Path.Combine(projectRoot, ".next"));
-                        psi.Arguments = hasBuild ? "run start" : "run dev";
-                        psi.WorkingDirectory = projectRoot;
-                        psi.WindowStyle = ProcessWindowStyle.Hidden;
-                        psi.CreateNoWindow = true;
-                        psi.UseShellExecute = false;
-                        Process.Start(psi);
-                    }
-                    catch (Exception ex)
+                // 1. First priority: Check if Cloud is online
+                UpdateStatus("جاري فحص الاتصال بالخادم السحابي المباشر...");
+                if (IsCloudResponsive())
+                {
+                    targetUrl = CLOUD_URL;
+                    UpdateStatus("تم الاتصال بالسحابة بنجاح! جاري فتح نافذة المنظومة...");
+                }
+                else
+                {
+                    // 2. Fallback to Local Server if offline or internet down
+                    UpdateStatus("الإنترنت غير متاح: جاري التحقق من الخادم المحلي...");
+                    if (!IsLocalServerResponsive())
                     {
-                        UpdateStatus("تنبيه: " + ex.Message);
+                        UpdateStatus("جاري تشغيل خادم المنظومة المحلي في الخلفية...");
+                        try
+                        {
+                            string npmPath = @"C:\Program Files\nodejs\npm.cmd";
+                            if (!File.Exists(npmPath)) npmPath = "npm.cmd";
+
+                            ProcessStartInfo psi = new ProcessStartInfo();
+                            psi.FileName = npmPath;
+                            psi.Arguments = "run start";
+                            psi.WorkingDirectory = projectRoot;
+                            psi.WindowStyle = ProcessWindowStyle.Hidden;
+                            psi.CreateNoWindow = true;
+                            psi.UseShellExecute = false;
+                            Process.Start(psi);
+                        }
+                        catch (Exception ex)
+                        {
+                            UpdateStatus("تنبيه: " + ex.Message);
+                        }
+
+                        while (!IsLocalServerResponsive() && checkCount < 20)
+                        {
+                            checkCount++;
+                            Thread.Sleep(1000);
+                            UpdateStatus("جاري تجهيز الخادم المحلي (" + checkCount + "/20)...");
+                        }
                     }
+
+                    targetUrl = "http://localhost:3000/login";
+                    UpdateStatus("تم تجهيز بيئة العمل المحلية! جاري فتح التطبيق...");
                 }
 
-                // Poll until server is ready (max 30 seconds)
-                while (!IsServerResponsive() && checkCount < 30)
-                {
-                    checkCount++;
-                    Thread.Sleep(1000);
-                    UpdateStatus("جاري تشغيل المنظومة (" + checkCount + "/30)...");
-                }
-
-                UpdateStatus("تم الاتصال بنجاح! جاري فتح نافذة التطبيق...");
-                Thread.Sleep(500);
+                Thread.Sleep(400);
 
                 if (this.IsHandleCreated)
                 {
                     this.Invoke((MethodInvoker)delegate
                     {
-                        LaunchAppWindow();
+                        LaunchAppWindow(targetUrl);
                         this.Close();
                     });
                 }
                 else
                 {
-                    LaunchAppWindow();
+                    LaunchAppWindow(targetUrl);
                 }
             }).Start();
         }
@@ -199,10 +227,8 @@ namespace AlMaraseem.Desktop
             }
         }
 
-        private void LaunchAppWindow()
+        private void LaunchAppWindow(string url)
         {
-            string url = "http://localhost:3000/login";
-
             // Find Edge or Chrome to run in pure App-Mode (No browser toolbars, pure desktop window)
             string edgePath = @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe";
             if (!File.Exists(edgePath)) edgePath = @"C:\Program Files\Microsoft\Edge\Application\msedge.exe";
@@ -216,13 +242,11 @@ namespace AlMaraseem.Desktop
             {
                 ProcessStartInfo psi = new ProcessStartInfo();
                 psi.FileName = browserPath;
-                // Chromium --app mode turns any web app into a native borderless desktop window
                 psi.Arguments = "--app=\"" + url + "\" --window-size=1366,850";
                 Process.Start(psi);
             }
             else
             {
-                // Fallback to default browser
                 ProcessStartInfo psi = new ProcessStartInfo(url);
                 psi.UseShellExecute = true;
                 Process.Start(psi);

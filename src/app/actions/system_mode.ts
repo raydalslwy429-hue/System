@@ -23,7 +23,7 @@ export async function testDatabaseConnectionAction(targetMode?: "local" | "cloud
   try {
     if (mode === "cloud") {
       const url = process.env.TURSO_DATABASE_URL || "libsql://raeed1-raydalslwy429-hue.aws-eu-central-1.turso.io";
-      const authToken = process.env.TURSO_AUTH_TOKEN || "";
+      const authToken = process.env.TURSO_AUTH_TOKEN || "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3OTQwNzUxNTcsImlkIjoiMDFhMWI3MzQtYmMwMS03ZjdmLWI1NTMtNGJlMzgyODkxZjU0Iiwia2lkIjoickV4c243NFRvQ2plQlBjeDMzRWcyM0pQT3JXdGZvaWZiYnpDcnVVY0dTZyIsInJpZCI6IjhmYjJlYzc0LThmYzctNGNjMy04MjFkLWQxNTY0ODViNDkxNiJ9.JixENvIVwegjJ2ZVr4nW5it2oNAma6D4UmV5JYy8R00Tf0oh_qt3d9oolBdrB5YVWijpIeflHG9CyO1JXqjoDw";
       const client = createClient({ url, authToken });
       await client.execute("SELECT 1 as ping");
       const pingTimeMs = Date.now() - startTime;
