@@ -1,6 +1,6 @@
 "use server";
 
-import { getPersistedDatabaseMode, setPersistedDatabaseMode } from "@/lib/db";
+import { getLocalDbPath, getPersistedDatabaseMode, setPersistedDatabaseMode } from "@/lib/db";
 import { createClient } from "@libsql/client";
 import path from "path";
 import fs from "fs";
@@ -29,7 +29,15 @@ export async function testDatabaseConnectionAction(targetMode?: "local" | "cloud
       const pingTimeMs = Date.now() - startTime;
       return { success: true, mode: "cloud", pingTimeMs };
     } else {
-      const localDbPath = path.resolve(process.cwd(), "local.db");
+      const localDbPath = getLocalDbPath();
+      if (!fs.existsSync(localDbPath)) {
+        const cwdDbPath = path.resolve(process.cwd(), "local.db");
+        if (fs.existsSync(cwdDbPath)) {
+          try {
+            fs.copyFileSync(cwdDbPath, localDbPath);
+          } catch {}
+        }
+      }
       if (!fs.existsSync(localDbPath)) {
         return { success: false, mode: "local", error: "ملف قاعدة البيانات المحلية (local.db) غير موجود" };
       }
@@ -61,13 +69,14 @@ export async function toggleDatabaseModeAction(requestedMode?: "local" | "cloud"
 }> {
   const session = await getSession();
   const permissions = await getUserEffectivePermissions(session);
-  const isAllowedAdmin = session?.role === "super_admin" || session?.role === "general_admin" || session?.role === "admin";
-  if (!session || (!isAllowedAdmin && !["full", "exclusive"].includes(permissions.features.manage_sync))) {
+  const isSuperUser = session?.role === "super_admin" || session?.role === "general_admin";
+  const hasSyncPermission = ["full", "exclusive"].includes(permissions.features.manage_sync);
+  if (!session || (!isSuperUser && !hasSyncPermission)) {
     return {
       success: false,
       mode: getPersistedDatabaseMode(),
       message: "",
-      error: "تحتاج إلى صلاحية إدارة وضع قاعدة البيانات والمزامنة",
+      error: "صلاحية إدارة وضع قاعدة البيانات والمزامنة محصورة بمدير المنظومة",
     };
   }
 

@@ -144,7 +144,9 @@ export default function Navbar({
 
           {/* Center Section: Interactive System Runtime Mode Toggle & Create Daily Report */}
           <div className="flex items-center gap-3">
-            {hasFeature("manage_sync") && <SystemModeToggle variant="navbar" />}
+            {(user.role === "super_admin" || user.role === "general_admin" || (hasFeature("manage_sync") && user.role !== "inspector" && user.role !== "field_agent")) && (
+              <SystemModeToggle variant="navbar" />
+            )}
 
             {/* Daily Report Button - Governed by user permission */}
             {canCreateDailyReport && (
@@ -164,19 +166,20 @@ export default function Navbar({
           <div className="flex items-center gap-2 sm:gap-4">
             
             {/* Outbox Badge Shortcut */}
-            <button
-              hidden={!hasFeature("offline_outbox")}
-              onClick={() => setShowOutbox(true)}
-              className={`p-2 rounded-xl border text-xs font-black transition-all flex items-center gap-1.5 ${
-                outboxCount > 0
-                  ? "bg-amber-500 text-[#1B1111] border-amber-400 shadow-md animate-bounce"
-                  : "bg-[#2A1C16] text-slate-300 border-[#D49A3D]/30 hover:bg-white/10"
-              }`}
-              title="قائمة الإرسال أوفلاين"
-            >
-              <Send className="w-4 h-4 rotate-180" />
-              {outboxCount > 0 && <span className="font-mono text-xs">{outboxCount}</span>}
-            </button>
+            {hasFeature("offline_outbox") && (
+              <button
+                onClick={() => setShowOutbox(true)}
+                className={`p-2 rounded-xl border text-xs font-black transition-all flex items-center gap-1.5 ${
+                  outboxCount > 0
+                    ? "bg-amber-500 text-[#1B1111] border-amber-400 shadow-md animate-bounce"
+                    : "bg-[#2A1C16] text-slate-300 border-[#D49A3D]/30 hover:bg-white/10"
+                }`}
+                title="قائمة الإرسال أوفلاين"
+              >
+                <Send className="w-4 h-4 rotate-180" />
+                {outboxCount > 0 && <span className="font-mono text-xs">{outboxCount}</span>}
+              </button>
+            )}
 
             {/* Notification Bell */}
             <div className="relative">

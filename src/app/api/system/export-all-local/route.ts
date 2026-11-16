@@ -12,9 +12,6 @@ export async function GET() {
   if (!session || (!(["super_admin", "general_admin"].includes(session.role)) && permissions.features.export_excel !== "full")) {
     return NextResponse.json({ error: "غير مصرح" }, { status: 403 });
   }
-  if (getPersistedDatabaseMode() !== "local") {
-    return NextResponse.json({ error: "التصدير متاح عند تشغيل قاعدة البيانات المحلية فقط" }, { status: 409 });
-  }
 
   const tablesResult = await db.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
   const tables = tablesResult.rows.map((row) => String(row.name));

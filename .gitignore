@@ -20,11 +20,11 @@
 .env.test.local
 .env.production.local
 
-# Local SQLite databases
-local.db
-local.db*
+# Local SQLite temporary files
+local.db-wal
+local.db-shm
+local.db-journal
 *.sqlite
-*.db
 
 # Brain & logs
 .system_generated/

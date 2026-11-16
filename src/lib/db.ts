@@ -10,13 +10,30 @@ let cachedMode: string | undefined = undefined;
 const DEFAULT_TURSO_URL = "libsql://raeed1-raydalslwy429-hue.aws-eu-central-1.turso.io";
 const DEFAULT_TURSO_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3OTQwNzUxNTcsImlkIjoiMDFhMWI3MzQtYmMwMS03ZjdmLWI1NTMtNGJlMzgyODkxZjU0Iiwia2lkIjoickV4c243NFRvQ2plQlBjeDMzRWcyM0pQT3JXdGZvaWZiYnpDcnVVY0dTZyIsInJpZCI6IjhmYjJlYzc0LThmYzctNGNjMy04MjFkLWQxNTY0ODViNDkxNiJ9.JixENvIVwegjJ2ZVr4nW5it2oNAma6D4UmV5JYy8R00Tf0oh_qt3d9oolBdrB5YVWijpIeflHG9CyO1JXqjoDw";
 
-export function getPersistedDatabaseMode(): "local" | "cloud" {
-  // Always force cloud mode on Vercel / serverless deployments
-  if (process.env.VERCEL || process.env.NEXT_PUBLIC_VERCEL_ENV) {
-    return "cloud";
+export function getLocalDbPath(): string {
+  const isVercel = Boolean(process.env.VERCEL || process.env.NEXT_PUBLIC_VERCEL_ENV);
+  const targetPath = isVercel
+    ? path.resolve("/tmp", "local.db")
+    : path.resolve(process.cwd(), "local.db");
+
+  if (isVercel && !fs.existsSync(targetPath)) {
+    const sourcePath = path.resolve(process.cwd(), "local.db");
+    if (fs.existsSync(sourcePath)) {
+      try {
+        fs.copyFileSync(sourcePath, targetPath);
+      } catch (err) {
+        console.error("Failed to copy local.db to /tmp:", err);
+      }
+    }
   }
+  return targetPath;
+}
+
+export function getPersistedDatabaseMode(): "local" | "cloud" {
   try {
-    const configPath = path.resolve(process.cwd(), "system_mode.json");
+    const isVercel = Boolean(process.env.VERCEL || process.env.NEXT_PUBLIC_VERCEL_ENV);
+    const configDir = isVercel ? "/tmp" : process.cwd();
+    const configPath = path.resolve(configDir, "system_mode.json");
     if (fs.existsSync(configPath)) {
       const data = JSON.parse(fs.readFileSync(configPath, "utf-8"));
       if (data.mode === "local" || data.mode === "cloud") {
@@ -24,12 +41,17 @@ export function getPersistedDatabaseMode(): "local" | "cloud" {
       }
     }
   } catch {}
+  if (process.env.VERCEL || process.env.NEXT_PUBLIC_VERCEL_ENV) {
+    return (process.env.DATABASE_MODE as "local" | "cloud") || "cloud";
+  }
   return (process.env.DATABASE_MODE as "local" | "cloud") || "local";
 }
 
 export function setPersistedDatabaseMode(mode: "local" | "cloud") {
   try {
-    const configPath = path.resolve(process.cwd(), "system_mode.json");
+    const isVercel = Boolean(process.env.VERCEL || process.env.NEXT_PUBLIC_VERCEL_ENV);
+    const configDir = isVercel ? "/tmp" : process.cwd();
+    const configPath = path.resolve(configDir, "system_mode.json");
     fs.writeFileSync(configPath, JSON.stringify({ mode, updatedAt: new Date().toISOString() }, null, 2), "utf-8");
   } catch {}
   process.env.DATABASE_MODE = mode;
@@ -49,7 +71,8 @@ export function getClient(): LibSqlClient {
   }
 
   const isLocal = currentMode === "local";
-  const localDbUrl = `file:${path.resolve(process.cwd(), "local.db").replace(/\\/g, "/")}`;
+  const localDbPath = getLocalDbPath();
+  const localDbUrl = `file:${localDbPath.replace(/\\/g, "/")}`;
 
   const url = isLocal
     ? localDbUrl

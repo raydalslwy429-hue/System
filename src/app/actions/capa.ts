@@ -95,7 +95,7 @@ export async function getUserEffectivePermissions(session: UserSession | null): 
   if (session.can_create_daily_report !== 0) defaultFeatures.create_daily_report = "full";
   if (Number(session.can_view_daily_archive) === 1) defaultFeatures.view_daily_archive = "full";
   defaultFeatures.change_own_pin = "full";
-  if (session.role === "super_admin" || session.role === "general_admin" || session.role === "admin") {
+  if (session.role === "super_admin" || session.role === "general_admin") {
     defaultFeatures.manage_sync = "full";
     defaultFeatures.import_excel = "full";
   }
@@ -1215,7 +1215,6 @@ export async function updateRolePermissionsAction(
 ) {
   const session = await getSession();
   if (!session) return { success: false, error: "غير مصرح" };
-  if (getPersistedDatabaseMode() !== "local") return { success: false, error: "تعديل الصلاحيات متاح في وضع قاعدة البيانات المحلية فقط" };
   const effectivePermissions = await getUserEffectivePermissions(session);
   if (session.role !== "super_admin" && session.role !== "general_admin" && effectivePermissions.features.manage_roles !== "full") {
     return { success: false, error: "صلاحية تعديل مصفوفة الصلاحيات محصورة بمدير المنظومة" };
@@ -1647,7 +1646,6 @@ export async function resetDatabaseAction(adminPin: string, resetScope: "cases_o
 
 // Bulk Import Actions for Excel
 export async function bulkImportDepartmentsAction(rows: Array<{ code: string; name: string; status?: string }>) {
-  if (getPersistedDatabaseMode() !== "local") return { success: false, error: "الاستيراد متاح في وضع قاعدة البيانات المحلية فقط" };
   const session = await getSession();
   if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure")) || !(await hasFeaturePermission(session, "import_excel"))) return { success: false, error: "تحتاج إلى صلاحية إدارة الهيكل والاستيراد من Excel" };
   let count = 0;
@@ -1664,7 +1662,6 @@ export async function bulkImportDepartmentsAction(rows: Array<{ code: string; na
 }
 
 export async function bulkImportSectionsAction(rows: Array<{ code: string; name: string; department_code: string; status?: string }>) {
-  if (getPersistedDatabaseMode() !== "local") return { success: false, error: "الاستيراد متاح في وضع قاعدة البيانات المحلية فقط" };
   const session = await getSession();
   if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure")) || !(await hasFeaturePermission(session, "import_excel"))) return { success: false, error: "تحتاج إلى صلاحية إدارة الهيكل والاستيراد من Excel" };
   let count = 0;
@@ -1681,7 +1678,6 @@ export async function bulkImportSectionsAction(rows: Array<{ code: string; name:
 }
 
 export async function bulkImportUsersAction(rows: Array<{ full_name: string; pin_code: string; role: string; department_code?: string }>) {
-  if (getPersistedDatabaseMode() !== "local") return { success: false, error: "الاستيراد متاح في وضع قاعدة البيانات المحلية فقط" };
   const session = await getSession();
   if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_users")) || !(await hasFeaturePermission(session, "import_excel"))) return { success: false, error: "تحتاج إلى صلاحية إدارة المستخدمين والاستيراد من Excel" };
   let count = 0;
@@ -1703,7 +1699,6 @@ export async function bulkImportUsersAction(rows: Array<{ full_name: string; pin
 }
 
 export async function bulkImportCategoriesAction(rows: Array<{ code: string; name: string; severity?: string }>) {
-  if (getPersistedDatabaseMode() !== "local") return { success: false, error: "الاستيراد متاح في وضع قاعدة البيانات المحلية فقط" };
   const session = await getSession();
   if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_structure")) || !(await hasFeaturePermission(session, "import_excel"))) return { success: false, error: "تحتاج إلى صلاحية إدارة دليل الحالات والاستيراد من Excel" };
   let count = 0;
@@ -1720,7 +1715,6 @@ export async function bulkImportCategoriesAction(rows: Array<{ code: string; nam
 }
 
 export async function bulkImportTemplatesAction(rows: Array<{ code: string; title: string; description?: string; allowed_roles?: string }>) {
-  if (getPersistedDatabaseMode() !== "local") return { success: false, error: "الاستيراد متاح في وضع قاعدة البيانات المحلية فقط" };
   const session = await getSession();
   if (!isAuthorizedAdmin(session) || !(await hasFeaturePermission(session, "manage_forms")) || !(await hasFeaturePermission(session, "import_excel"))) return { success: false, error: "تحتاج إلى صلاحية إدارة النماذج والاستيراد من Excel" };
   let count = 0;

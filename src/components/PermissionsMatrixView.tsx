@@ -223,8 +223,8 @@ const PERMISSIONS_SCHEMA = [
       },
       {
         key: "manage_sync",
-        name: "فتح نافذة المزامنة ووضع قاعدة البيانات",
-        description: "التحكم في ظهور أدوات المزامنة وتبديل وضع النظام من الواجهة",
+        name: "مركز المزامنة ووضع النظام (سحابي / محلي)",
+        description: "التحكم في ظهور مركز المزامنة وأداة تبديل وضع النظام (سحابي أونلاين / محلي أوفلاين)",
         allowDeptOnly: false,
       },
       {
@@ -307,13 +307,13 @@ const INHERITED_SYSTEM_ROLE_PERMISSIONS: Record<string, Record<string, string>> 
     view_open_cases: "dept_only", view_in_progress_cases: "dept_only", view_review_cases: "dept_only", view_closed_cases: "dept_only", view_all_cases: "dept_only", view_executor_directory: "dept_only",
     inspect_create: "dept_only", triage_assign: "dept_only", triage_direct_user: "dept_only", triage_curated: "dept_only",
     additional_assignment: "dept_only", write_in_progress_note: "dept_only", review_approve: "dept_only", review_round_bump: "dept_only", close_in_progress_case: "dept_only",
-    offline_outbox: "full", change_own_pin: "full",
+    offline_outbox: "full", change_own_pin: "full", manage_sync: "none",
   },
   inspector: {
     can_view: "dept_only", can_create: "full", inspect_create: "full", inspect_offline: "full", inspect_typeahead: "full", inspect_view_own: "full",
-    offline_outbox: "full", change_own_pin: "full",
+    offline_outbox: "full", change_own_pin: "full", manage_sync: "none",
   },
-  field_agent: { field_execute: "full", field_feedback: "full", offline_outbox: "full", change_own_pin: "full" },
+  field_agent: { field_execute: "full", field_feedback: "full", offline_outbox: "full", change_own_pin: "full", manage_sync: "none" },
 };
 
 export default function PermissionsMatrixView({

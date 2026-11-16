@@ -163,72 +163,76 @@ export default function AppDrawer({
             الحساب والمزامنة
           </div>
 
-          <button
-            hidden={!hasFeature("change_own_pin")}
-            onClick={() => {
-              onOpenChangePin();
-              onClose();
-            }}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <KeyRound className="w-4 h-4 text-[#D49A3D]" />
-            <span>الخصوصية وتغيير كلمة السر</span>
-          </button>
-
-          <button
-            hidden={!hasFeature("offline_outbox")}
-            onClick={() => {
-              onOpenOutbox();
-              onClose();
-            }}
-            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <Send className="w-4 h-4 text-emerald-400" />
-              <span>قائمة جاهز للإرسال (أوفلاين)</span>
-            </div>
-            {outboxCount > 0 && (
-              <span className="px-2 py-0.5 bg-amber-500 text-[#1B1111] text-[10px] font-black rounded-full">
-                {outboxCount}
-              </span>
-            )}
-          </button>
-
-          <button
-            hidden={!hasFeature("manage_sync")}
-            onClick={() => {
-              if (onOpenSyncModal) {
-                onOpenSyncModal();
+          {hasFeature("change_own_pin") && (
+            <button
+              onClick={() => {
+                onOpenChangePin();
                 onClose();
-              } else {
-                handleItemClick("manage_sync");
-              }
-            }}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <Radio className="w-4 h-4 text-amber-300" />
-            <span>مركز المزامنة ووضع النظام</span>
-          </button>
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <KeyRound className="w-4 h-4 text-[#D49A3D]" />
+              <span>الخصوصية وتغيير كلمة السر</span>
+            </button>
+          )}
+
+          {hasFeature("offline_outbox") && (
+            <button
+              onClick={() => {
+                onOpenOutbox();
+                onClose();
+              }}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <Send className="w-4 h-4 text-emerald-400" />
+                <span>قائمة جاهز للإرسال (أوفلاين)</span>
+              </div>
+              {outboxCount > 0 && (
+                <span className="px-2 py-0.5 bg-amber-500 text-[#1B1111] text-[10px] font-black rounded-full">
+                  {outboxCount}
+                </span>
+              )}
+            </button>
+          )}
+
+          {(user.role === "super_admin" || user.role === "general_admin" || (hasFeature("manage_sync") && user.role !== "inspector" && user.role !== "field_agent")) && (
+            <button
+              onClick={() => {
+                if (onOpenSyncModal) {
+                  onOpenSyncModal();
+                  onClose();
+                } else {
+                  handleItemClick("manage_sync");
+                }
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-slate-200 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <Radio className="w-4 h-4 text-amber-300" />
+              <span>مركز المزامنة ووضع النظام</span>
+            </button>
+          )}
 
           {/* Universal Section: Daily Reports */}
           <div className="text-[10px] font-black text-amber-400/80 px-2 py-1 uppercase tracking-wider">
             التقارير والعمل الميداني
           </div>
 
-          <button
-            hidden={!hasFeature("create_daily_report")}
-            onClick={() => {
-              if (onOpenDailyReport) onOpenDailyReport();
-              onClose();
-            }}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-amber-300 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <FileText className="w-4 h-4 text-[#FFC217]" />
-            <span>إنشاء تقرير يومي 📝</span>
-          </button>
+          {hasFeature("create_daily_report") && (
+            <button
+              onClick={() => {
+                if (onOpenDailyReport) onOpenDailyReport();
+                onClose();
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold text-amber-300 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <FileText className="w-4 h-4 text-[#FFC217]" />
+              <span>إنشاء تقرير يومي 📝</span>
+            </button>
+          )}
 
-          <button
-            hidden={!hasViewFeature("view_daily_archive")}
+          {hasViewFeature("view_daily_archive") && (
+            <button
               onClick={() => {
                 if (onOpenDailyArchive) onOpenDailyArchive();
                 onClose();
@@ -241,7 +245,8 @@ export default function AppDrawer({
                   ? "أرشيف التقارير اليومية (المركزي)"
                   : "أرشيف تقارير إدارتي اليومية"}
               </span>
-          </button>
+            </button>
+          )}
 
           <div className="h-px bg-white/10 my-2"></div>
 
