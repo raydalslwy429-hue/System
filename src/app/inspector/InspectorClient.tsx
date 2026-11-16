@@ -7,6 +7,7 @@ import InspectorForm from "./InspectorForm";
 import { Layers, Zap, Clock, ShieldCheck, FileText, CheckCircle2 } from "lucide-react";
 
 interface InspectorClientProps {
+  departments?: Array<{ code: string; name: string }>;
   locations: Array<{ code: string; name: string }>;
   categories: Array<{ code: string; name: string; severity?: string }>;
   dynamicTemplates: FormTemplate[];
@@ -14,6 +15,7 @@ interface InspectorClientProps {
 }
 
 export default function InspectorClient({
+  departments = [],
   locations,
   categories,
   dynamicTemplates,
@@ -137,7 +139,7 @@ export default function InspectorClient({
               <span className="w-2.5 h-2.5 rounded-full bg-[#D49A3D]"></span>
               <span>تسجيل بلاغ تفتيش سريع وفوري</span>
             </h3>
-            <InspectorForm departments={[]} locations={locations} categories={categories} />
+            <InspectorForm departments={departments} locations={locations} categories={categories} />
           </div>
         )}
       </div>

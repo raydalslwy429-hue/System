@@ -27,12 +27,15 @@ async function hasFeatureReadPermission(session: NonNullable<Awaited<ReturnType<
 // 1. Fetch Dynamic Templates with their Questions
 export async function getDynamicTemplatesAction(userRole?: string) {
   const session = await getSession();
-  if (!session || !(await hasFeatureReadPermission(session, "inspect_create"))) {
-    return { success: false, error: "لا تملك صلاحية الاطلاع على استمارات التفتيش", templates: [] as FormTemplate[] };
+  if (!session) {
+    return { success: false, error: "يجب تسجيل الدخول أولاً", templates: [] as FormTemplate[] };
   }
-  const role = session.role === "super_admin" || session.role === "general_admin" ? userRole || session.role : session.role;
+  const isSuperAdmin = session.role === "super_admin" || session.role === "general_admin";
+  const role = isSuperAdmin ? userRole || session.role : session.role;
 
-  let sql = "SELECT * FROM forms_templates WHERE status = 'active'";
+  let sql = isSuperAdmin
+    ? "SELECT * FROM forms_templates ORDER BY id ASC"
+    : "SELECT * FROM forms_templates WHERE status = 'active' ORDER BY id ASC";
   const templatesRes = await db.execute(sql);
 
   const templates: FormTemplate[] = [];
@@ -41,9 +44,12 @@ export async function getDynamicTemplatesAction(userRole?: string) {
     const tId = Number(row.id);
     const allowed = String(row.allowed_roles || "all");
 
-    // Filter by allowed role unless super_admin
-    if (session?.role !== "super_admin" && allowed !== "all" && !allowed.includes(role)) {
-      continue;
+    // Filter by allowed role unless super_admin or general_admin
+    if (!isSuperAdmin && allowed !== "all") {
+      const allowedList = allowed.split(",").map((r) => r.trim());
+      if (!allowedList.includes(role)) {
+        continue;
+      }
     }
 
     const qRes = await db.execute({
@@ -175,7 +181,52 @@ export async function createDynamicTemplateAction(data: {
   return { success: true, templateId };
 }
 
-// 3. Submit Form Response (Inspector / Mobile / Offline Sync)
+// 2.5 Super Admin / General Admin: Update Template Allowed Roles & Visibility
+export async function updateTemplateAllowedRolesAction(data: {
+  templateId: number;
+  allowedRoles: string;
+  status?: "active" | "disabled";
+}) {
+  const session = await getSession();
+  if (
+    !session ||
+    (session.role !== "super_admin" &&
+      session.role !== "general_admin" &&
+      !(await hasFeaturePermission(session, "manage_forms")))
+  ) {
+    return { success: false, error: "صلاحية إدارة وتوزيع الاستمارات محصورة بمدير المنظومة" };
+  }
+
+  const { templateId, allowedRoles, status } = data;
+  if (!templateId) return { success: false, error: "معرف الاستمارة غير صالح" };
+
+  await db.execute({
+    sql: `UPDATE forms_templates 
+          SET allowed_roles = ?, 
+              status = COALESCE(?, status)
+          WHERE id = ?`,
+    args: [allowedRoles.trim(), status || null, templateId],
+  });
+
+  await db.execute({
+    sql: `INSERT INTO audit_logs (log_id, event_type, actor_name, actor_role, details)
+          VALUES (?, 'FORM_PERMISSIONS_UPDATED', ?, ?, ?)`,
+    args: [
+      `LOG-FORMPERM-${Date.now()}`,
+      session.full_name,
+      session.role,
+      `تم تحديث صلاحيات ظهور وتوزيع الاستمارة رقم (#${templateId}) إلى: [${allowedRoles}] وحالتها: [${status || "بدون تغيير"}].`,
+    ],
+  });
+
+  revalidatePath("/admin");
+  revalidatePath("/inspector");
+  revalidatePath("/field");
+
+  return { success: true };
+}
+
+// 3. Submit Form Response (Inspector / Field Agent / Admin / Offline Sync)
 export async function submitFormResponseAction(data: {
   template_id: number;
   location_code: string;
@@ -191,8 +242,19 @@ export async function submitFormResponseAction(data: {
   if (!session) {
     return { success: false, error: "يجب تسجيل الدخول أولاً لتسجيل الاستمارة" };
   }
-  if (!(await hasFeaturePermission(session, "inspect_create"))) {
-    return { success: false, error: "لا تملك صلاحية إرسال استمارات التفتيش" };
+
+  const isSuper = session.role === "super_admin" || session.role === "general_admin";
+  const tCheck = await db.execute({
+    sql: "SELECT allowed_roles, status FROM forms_templates WHERE id = ?",
+    args: [data.template_id],
+  });
+  const tAllowed = String(tCheck.rows[0]?.allowed_roles || "all");
+  const isPermittedRole =
+    tAllowed === "all" ||
+    tAllowed.split(",").map((r) => r.trim()).includes(session.role);
+
+  if (!isSuper && !isPermittedRole && !(await hasFeaturePermission(session, "inspect_create"))) {
+    return { success: false, error: "لا تملك صلاحية إرسال هذه الاستمارة" };
   }
 
   // Resolve Location & Department

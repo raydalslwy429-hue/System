@@ -98,6 +98,7 @@ import DailyReportsArchiveModal from "@/components/DailyReportsArchiveModal";
 import { toggleUserDailyReportAction, toggleUserDailyArchivePermissionAction } from "@/app/actions/daily_reports";
 import InspectorForm from "../inspector/InspectorForm";
 import FormBuilder from "./FormBuilder";
+import FormsVisibilityManager from "@/components/FormsVisibilityManager";
 import ExcelImportModal from "@/components/ExcelImportModal";
 
 // Props types
@@ -314,6 +315,9 @@ export default function AdminManager({
 
   const [showAddSectionModal, setShowAddSectionModal] = useState(false);
   const [editingSection, setEditingSection] = useState<any | null>(null);
+
+  // Dynamic Forms State
+  const [formsViewMode, setFormsViewMode] = useState<"visibility" | "builder">("visibility");
 
   // Custom Roles State
   const [showRoleModal, setShowRoleModal] = useState(false);
@@ -1765,11 +1769,35 @@ export default function AdminManager({
         )}
 
         {/* ============================================================== */}
-        {/* 🪄 DYNAMIC FORMS BUILDER (مدير النظام فقط)                     */}
+        {/* 🪄 DYNAMIC FORMS CONTROLLER & BUILDER (مدير النظام فقط)       */}
         {/* ============================================================== */}
         {isSystemAdmin && activeMenu === "dynamic_forms" && (
           <div className="space-y-4">
-            <FormBuilder />
+            {formsViewMode === "visibility" ? (
+              <FormsVisibilityManager
+                locations={locations}
+                onOpenBuilder={() => setFormsViewMode("builder")}
+              />
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => setFormsViewMode("visibility")}
+                    className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs rounded-xl transition-all"
+                  >
+                    <span>← العودة لإدارة وتوزيع الاستمارات</span>
+                  </button>
+                  <span className="text-xs font-black text-[#682722]">تصميم استمارة جديدة مخصصة</span>
+                </div>
+                <FormBuilder
+                  departments={departments}
+                  roles={roles}
+                  users={users}
+                  onFormCreated={() => setFormsViewMode("visibility")}
+                />
+              </div>
+            )}
           </div>
         )}
 
