@@ -16,6 +16,8 @@ import {
   Camera,
   X,
   ExternalLink,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
 interface InspectorClientProps {
@@ -42,6 +44,7 @@ export default function InspectorClient({
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [viewingPhotoUrl, setViewingPhotoUrl] = useState<string | null>(null);
+  const [expandedCaseId, setExpandedCaseId] = useState<number | null>(null);
 
   const selectedTemplate =
     dynamicTemplates.find((t) => t.id === selectedTemplateId) || dynamicTemplates[0];
@@ -79,10 +82,14 @@ export default function InspectorClient({
   }, [router]);
 
   const statusLabels: Record<string, { label: string; color: string }> = {
-    pending_assignment: { label: "بانتظار فرز وتوجيه الإدارة", color: "bg-amber-100 text-amber-900 border-amber-300" },
-    assigned: { label: "قيد التنفيذ الميداني", color: "bg-blue-100 text-blue-900 border-blue-300" },
-    pending_review: { label: "جاهز لمراجعة الإدارة", color: "bg-[#682722]/10 text-[#682722] border-[#682722]/30" },
-    closed: { label: "مغلق ومعتمد بنجاح", color: "bg-emerald-100 text-emerald-900 border-emerald-300" },
+    pending_assignment: { label: "بانتظار الفرز والتوجيه", color: "bg-amber-100 text-amber-900 border-amber-300" },
+    assigned: { label: "قيد المعالجة الميدانية", color: "bg-blue-100 text-blue-900 border-blue-300" },
+    in_progress: { label: "قيد التنفيذ والمتابعة", color: "bg-blue-100 text-blue-900 border-blue-300" },
+    pending_review: { label: "بانتظار مراجعة واعتماد الإدارة", color: "bg-[#682722]/10 text-[#682722] border-[#682722]/30" },
+    completed: { label: "تم الإنجاز الميداني", color: "bg-purple-100 text-purple-900 border-purple-300" },
+    accepted: { label: "معتمد إدارياً", color: "bg-emerald-100 text-emerald-900 border-emerald-300" },
+    returned: { label: "معاد للاستكمال", color: "bg-rose-100 text-rose-900 border-rose-300" },
+    closed: { label: "مغلق نهائياً ومعتمد", color: "bg-emerald-100 text-emerald-900 border-emerald-300" },
   };
 
   return (
@@ -221,41 +228,61 @@ export default function InspectorClient({
           <div className="space-y-3 max-h-[75vh] overflow-y-auto pr-1">
             {recentCases.map((c: any) => {
               const st = statusLabels[c.status] || { label: c.status, color: "bg-slate-100 text-slate-800" };
+              const isExpanded = expandedCaseId === c.id;
+
               return (
                 <div
                   key={c.id}
-                  className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:border-[#D49A3D]/40 transition-all space-y-2"
+                  className="rounded-2xl border border-slate-200 bg-white hover:border-[#D49A3D]/40 transition-all overflow-hidden shadow-xs"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="px-2.5 py-0.5 bg-[#1B1111] text-[#FFC217] rounded-lg text-xs font-mono font-black">
-                      #{c.case_number}
-                    </span>
-                    <span className={`px-2.5 py-0.5 text-[10px] font-black rounded-full border ${st.color}`}>
-                      {st.label}
-                    </span>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedCaseId(isExpanded ? null : c.id)}
+                    className="w-full text-right p-3.5 bg-slate-50/60 hover:bg-amber-50/40 transition-colors flex items-center justify-between gap-2"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                        <span className="px-2 py-0.5 bg-[#1B1111] text-[#FFC217] rounded-md text-xs font-mono font-black">
+                          #{c.case_number}
+                        </span>
+                        <span className={`px-2 py-0.5 text-[10px] font-black rounded-md border ${st.color}`}>
+                          {st.label}
+                        </span>
+                        {c.photo_before && (
+                          <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded">
+                            📷 صورة
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="text-xs font-black text-slate-900 truncate">{c.nc_name}</h4>
+                      <div className="text-[10px] text-slate-500 font-semibold">{c.location_name} • {c.obs_date} {c.obs_time}</div>
+                    </div>
+                    <div className="text-slate-400 p-1">
+                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </div>
+                  </button>
 
-                  <h4 className="text-xs font-black text-slate-900">{c.nc_name}</h4>
-                  <p className="text-[11px] text-slate-600 line-clamp-2">{c.description}</p>
+                  {isExpanded && (
+                    <div className="p-3.5 border-t border-slate-100 space-y-2.5 text-xs animate-in slide-in-from-top-1">
+                      <div className="text-slate-700 leading-relaxed bg-[#FAF7F4] p-2.5 rounded-xl border border-slate-200">
+                        <strong className="text-[#1B1111] font-black block mb-0.5">وصف الحالة:</strong>
+                        {c.description}
+                      </div>
 
-                  {/* Photo badge if photo exists */}
-                  {c.photo_before && (
-                    <button
-                      type="button"
-                      onClick={() => setViewingPhotoUrl(c.photo_before)}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-[#D49A3D]/40 rounded-lg text-[10px] font-black text-[#1B1111] transition-colors"
-                    >
-                      <Camera className="w-3.5 h-3.5 text-[#D49A3D]" />
-                      <span>عرض صورة الحالة المرفقة</span>
-                    </button>
+                      {c.photo_before && (
+                        <div className="pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setViewingPhotoUrl(c.photo_before)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-[#D49A3D]/40 rounded-xl text-xs font-black text-[#1B1111] transition-colors"
+                          >
+                            <Camera className="w-3.5 h-3.5 text-[#D49A3D]" />
+                            <span>عرض صورة الحالة الميدانية</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
-
-                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-semibold pt-1 border-t border-slate-200/60">
-                    <span>{c.location_name}</span>
-                    <span>
-                      {c.obs_date} {c.obs_time}
-                    </span>
-                  </div>
                 </div>
               );
             })}

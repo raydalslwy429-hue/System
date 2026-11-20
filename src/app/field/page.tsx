@@ -46,6 +46,7 @@ export default async function FieldDashboard() {
       c.obs_time,
       c.status as case_status,
       c.photo_before,
+      c.hidden_fields_json,
       e.action_taken,
       e.notes as executor_notes,
       e.photo_after
@@ -81,8 +82,22 @@ export default async function FieldDashboard() {
     locationName: String(r.location_name),
     ncName: String(r.nc_name),
     description: String(r.description),
-    rootCause: String(r.root_cause || ""),
-    inspectorNotes: String(r.inspector_notes || ""),
+    rootCause: (() => {
+      try {
+        const h = r.hidden_fields_json ? JSON.parse(String(r.hidden_fields_json)) : [];
+        return h.includes("root_cause") ? "" : String(r.root_cause || "");
+      } catch {
+        return String(r.root_cause || "");
+      }
+    })(),
+    inspectorNotes: (() => {
+      try {
+        const h = r.hidden_fields_json ? JSON.parse(String(r.hidden_fields_json)) : [];
+        return h.includes("inspector_notes") ? "" : String(r.inspector_notes || "");
+      } catch {
+        return String(r.inspector_notes || "");
+      }
+    })(),
     inProgressNote: r.in_progress_note ? String(r.in_progress_note) : undefined,
     actionTaken: r.action_taken ? String(r.action_taken) : undefined,
     executorNotes: r.executor_notes ? String(r.executor_notes) : undefined,

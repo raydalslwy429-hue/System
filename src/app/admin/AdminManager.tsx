@@ -194,6 +194,18 @@ export default function AdminManager({
   const [activeCloseInProgressModal, setActiveCloseInProgressModal] = useState<any | null>(null);
   const [closeInProgressNotes, setCloseInProgressNotes] = useState<string>("");
 
+  // Photo Comparison Lightbox State (المقارنة التفاعلية للصور قبل وبعد)
+  const [comparisonModal, setComparisonModal] = useState<{
+    caseNumber: string | number;
+    title: string;
+    photoBefore?: string | null;
+    photoAfter?: string | null;
+    locationName?: string;
+    departmentName?: string;
+    actionTaken?: string;
+    executorName?: string;
+  } | null>(null);
+
   // Excel Export State & Runner
   const [exportingExcel, setExportingExcel] = useState(false);
 
@@ -351,6 +363,11 @@ export default function AdminManager({
   const [userFormCustomRoleId, setUserFormCustomRoleId] = useState<string>("none");
   const [userFormRole, setUserFormRole] = useState("field_agent");
   const [userFormDept, setUserFormDept] = useState("");
+  const [userFormHomeDept, setUserFormHomeDept] = useState("");
+  const [userFormHomeSec, setUserFormHomeSec] = useState("");
+  const [userFormSupervisedDepts, setUserFormSupervisedDepts] = useState<string[]>([]);
+  const [userFormCanReceiveCases, setUserFormCanReceiveCases] = useState(false);
+  const [userFormCanCloseCases, setUserFormCanCloseCases] = useState(false);
   const [userFormCanExcel, setUserFormCanExcel] = useState(false);
   const [userFormCanArchive, setUserFormCanArchive] = useState(false);
 
@@ -711,8 +728,17 @@ export default function AdminManager({
     setUserFormCustomRoleId(u.custom_role_id ? String(u.custom_role_id) : "none");
     setUserFormRole(u.role || "field_agent");
     setUserFormDept(u.department_code || "");
-    setUserFormCanExcel(u.can_export_excel === 1);
-    setUserFormCanArchive(u.can_view_daily_archive === 1);
+    setUserFormHomeDept(u.home_department_code || u.department_code || "");
+    setUserFormHomeSec(u.home_section_code || "");
+    setUserFormSupervisedDepts(
+      u.supervised_departments
+        ? String(u.supervised_departments).split(",").map((d: string) => d.trim()).filter(Boolean)
+        : []
+    );
+    setUserFormCanReceiveCases(Number(u.can_receive_cases) === 1 || u.role === "field_agent");
+    setUserFormCanCloseCases(Number(u.can_close_assigned_cases) === 1 || u.role === "admin");
+    setUserFormCanExcel(Number(u.can_export_excel) === 1);
+    setUserFormCanArchive(Number(u.can_view_daily_archive) === 1);
     setShowEditUserModal(true);
   };
 
@@ -1972,6 +1998,32 @@ export default function AdminManager({
                         </div>
                       </div>
 
+                      {/* Case Photo Before */}
+                      {c.photo_before && (
+                        <div className="flex items-center justify-between bg-[#FAF7F4] p-2.5 rounded-xl border border-slate-200">
+                          <span className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
+                            <Eye className="w-3.5 h-3.5 text-[#D49A3D]" />
+                            <span>صورة المخالفة المرصودة:</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setComparisonModal({
+                                caseNumber: c.case_number,
+                                title: c.nc_name || "حالة بانتظار الفرز",
+                                photoBefore: c.photo_before,
+                                photoAfter: null,
+                                locationName: c.location_name,
+                                departmentName: c.department_name,
+                              })
+                            }
+                            className="text-[11px] font-bold text-[#682722] hover:text-[#1B1111] hover:underline"
+                          >
+                            عرض الصورة ↗
+                          </button>
+                        </div>
+                      )}
+
                       {/* Dispatch Selector with permissions enforcement */}
                       <div className="pt-3 border-t border-slate-100 space-y-3">
                         {userPermissions?.can_assign === 'none' ? (
@@ -2218,6 +2270,32 @@ export default function AdminManager({
                       </div>
                     )}
 
+                    {/* Case Photo Before */}
+                    {c.photo_before && (
+                      <div className="pt-2 flex items-center justify-between bg-[#FAF7F4] p-2.5 rounded-xl border border-slate-200">
+                        <span className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
+                          <Eye className="w-3.5 h-3.5 text-[#D49A3D]" />
+                          <span>صورة المخالفة المرصودة:</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setComparisonModal({
+                              caseNumber: c.case_number,
+                              title: c.nc_name || "حالة قيد التنفيذ",
+                              photoBefore: c.photo_before,
+                              photoAfter: null,
+                              locationName: c.location_name,
+                              departmentName: c.department_name,
+                            })
+                          }
+                          className="text-[11px] font-bold text-[#682722] hover:text-[#1B1111] hover:underline"
+                        >
+                          عرض الصورة ↗
+                        </button>
+                      </div>
+                    )}
+
                     {/* 3 CONTROL BUTTONS FOR IN-PROGRESS CASE */}
                     <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
                       <span className="text-[11px] font-black text-slate-400">خيارات التحكم بالحالة:</span>
@@ -2389,11 +2467,93 @@ export default function AdminManager({
                         </div>
                       </div>
 
-                      {item.evidence_url && (
-                        <div className="text-xs pt-1">
-                          <span className="text-slate-400 font-bold block mb-1">صورة إثبات المعالجة:</span>
-                          <div className="relative rounded-2xl overflow-hidden border border-slate-200 h-44 bg-slate-50 flex items-center justify-center">
-                            <img src={item.evidence_url} alt="إثبات الإنجاز" className="object-contain max-h-full max-w-full" />
+                      {/* Photo Comparison Grid (قبل / بعد) */}
+                      {(item.photo_before || item.photo_after || item.evidence_url) && (
+                        <div className="pt-2 border-t border-slate-100">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <span className="text-xs font-black text-[#1B1111] flex items-center gap-1.5">
+                              <Eye className="w-4 h-4 text-[#D49A3D]" />
+                              <span>مقارنة التوثيق البصري (قبل / بعد المعالجة):</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setComparisonModal({
+                                  caseNumber: item.case_number,
+                                  title: item.title || item.nc_name || "مراجعة الحالة",
+                                  photoBefore: item.photo_before,
+                                  photoAfter: item.photo_after || item.evidence_url,
+                                  locationName: item.location || item.location_name,
+                                  departmentName: item.department_name,
+                                  actionTaken: item.action_taken,
+                                  executorName: item.assigned_to_user_name || item.executor_name,
+                                })
+                              }
+                              className="text-[11px] font-bold text-[#682722] hover:text-[#1B1111] bg-[#FAF3F3] hover:bg-amber-100/50 px-2.5 py-1 rounded-lg border border-[#682722]/20 transition-all flex items-center gap-1"
+                            >
+                              <span>🔍 عرض بالحجم الكامل ومقارنة دقيقة</span>
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {/* صورة قبل */}
+                            <div className="bg-[#FAF7F4] p-2.5 rounded-2xl border border-slate-200 text-center">
+                              <span className="text-[11px] font-black text-rose-800 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200 inline-block mb-1.5">
+                                📸 صورة المخالفة (قبل المعالجة)
+                              </span>
+                              {item.photo_before ? (
+                                <div
+                                  onClick={() =>
+                                    setComparisonModal({
+                                      caseNumber: item.case_number,
+                                      title: item.title || item.nc_name || "مراجعة الحالة",
+                                      photoBefore: item.photo_before,
+                                      photoAfter: item.photo_after || item.evidence_url,
+                                      locationName: item.location || item.location_name,
+                                      departmentName: item.department_name,
+                                      actionTaken: item.action_taken,
+                                      executorName: item.assigned_to_user_name || item.executor_name,
+                                    })
+                                  }
+                                  className="relative rounded-xl overflow-hidden border border-slate-200 h-36 bg-slate-900/5 flex items-center justify-center cursor-pointer hover:opacity-90 transition-all"
+                                >
+                                  <img src={item.photo_before} alt="صورة المخالفة (قبل)" className="object-cover w-full h-full" />
+                                </div>
+                              ) : (
+                                <div className="h-36 rounded-xl border border-dashed border-slate-200 flex items-center justify-center text-slate-400 text-xs font-semibold">
+                                  لا توجد صورة مسجلة للرصد
+                                </div>
+                              )}
+                            </div>
+
+                            {/* صورة بعد */}
+                            <div className="bg-[#FAF7F4] p-2.5 rounded-2xl border border-slate-200 text-center">
+                              <span className="text-[11px] font-black text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 inline-block mb-1.5">
+                                ✨ صورة الإنجاز (بعد المعالجة)
+                              </span>
+                              {(item.photo_after || item.evidence_url) ? (
+                                <div
+                                  onClick={() =>
+                                    setComparisonModal({
+                                      caseNumber: item.case_number,
+                                      title: item.title || item.nc_name || "مراجعة الحالة",
+                                      photoBefore: item.photo_before,
+                                      photoAfter: item.photo_after || item.evidence_url,
+                                      locationName: item.location || item.location_name,
+                                      departmentName: item.department_name,
+                                      actionTaken: item.action_taken,
+                                      executorName: item.assigned_to_user_name || item.executor_name,
+                                    })
+                                  }
+                                  className="relative rounded-xl overflow-hidden border border-slate-200 h-36 bg-slate-900/5 flex items-center justify-center cursor-pointer hover:opacity-90 transition-all"
+                                >
+                                  <img src={item.photo_after || item.evidence_url} alt="صورة الإنجاز (بعد)" className="object-cover w-full h-full" />
+                                </div>
+                              ) : (
+                                <div className="h-36 rounded-xl border border-dashed border-slate-200 flex items-center justify-center text-slate-400 text-xs font-semibold">
+                                  لم يتم إرفاق صورة معالجة
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       )}
@@ -2542,6 +2702,86 @@ export default function AdminManager({
                       <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-950 font-bold space-y-1">
                         <span className="text-emerald-800 font-black block">💡 التوجيه والملاحظات الإدارية الدائمة عند الإغلاق:</span>
                         <p className="text-emerald-900 font-semibold leading-relaxed">{c.closed_feedback}</p>
+                      </div>
+                    )}
+
+                    {/* Photo Comparison Grid (قبل / بعد) للحالات المغلقة */}
+                    {(c.photo_before || c.photo_after) && (
+                      <div className="pt-2 border-t border-slate-100">
+                        <div className="flex flex-wrap items-center justify-between gap-1 mb-2">
+                          <span className="text-xs font-black text-[#1B1111] flex items-center gap-1.5">
+                            <Eye className="w-4 h-4 text-[#D49A3D]" />
+                            <span>المقارنة البصرية الموثقة (قبل / بعد):</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setComparisonModal({
+                                caseNumber: c.case_number,
+                                title: c.nc_name || c.title || "حالة مغلقة",
+                                photoBefore: c.photo_before,
+                                photoAfter: c.photo_after,
+                                locationName: c.location_name || c.location,
+                                departmentName: c.department_name,
+                                actionTaken: c.action_taken,
+                                executorName: c.executor_name,
+                              })
+                            }
+                            className="text-[11px] font-bold text-[#682722] hover:text-[#1B1111] bg-[#FAF3F3] hover:bg-amber-100/50 px-2 py-0.5 rounded-lg border border-[#682722]/20 transition-all flex items-center gap-1"
+                          >
+                            <span>🔍 تكبير ومقارنة</span>
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="bg-[#FAF7F4] p-2 rounded-xl border border-slate-200 text-center">
+                            <span className="text-[10px] font-black text-rose-800 block mb-1">📸 قبل المعالجة</span>
+                            {c.photo_before ? (
+                              <img
+                                src={c.photo_before}
+                                alt="قبل"
+                                onClick={() =>
+                                  setComparisonModal({
+                                    caseNumber: c.case_number,
+                                    title: c.nc_name || c.title || "حالة مغلقة",
+                                    photoBefore: c.photo_before,
+                                    photoAfter: c.photo_after,
+                                    locationName: c.location_name || c.location,
+                                    departmentName: c.department_name,
+                                    actionTaken: c.action_taken,
+                                    executorName: c.executor_name,
+                                  })
+                                }
+                                className="h-28 w-full object-cover rounded-lg border border-slate-200 cursor-pointer hover:opacity-90"
+                              />
+                            ) : (
+                              <div className="h-28 rounded-lg border border-dashed border-slate-200 flex items-center justify-center text-[10px] text-slate-400">لا توجد صورة</div>
+                            )}
+                          </div>
+                          <div className="bg-[#FAF7F4] p-2 rounded-xl border border-slate-200 text-center">
+                            <span className="text-[10px] font-black text-emerald-800 block mb-1">✨ بعد المعالجة</span>
+                            {c.photo_after ? (
+                              <img
+                                src={c.photo_after}
+                                alt="بعد"
+                                onClick={() =>
+                                  setComparisonModal({
+                                    caseNumber: c.case_number,
+                                    title: c.nc_name || c.title || "حالة مغلقة",
+                                    photoBefore: c.photo_before,
+                                    photoAfter: c.photo_after,
+                                    locationName: c.location_name || c.location,
+                                    departmentName: c.department_name,
+                                    actionTaken: c.action_taken,
+                                    executorName: c.executor_name,
+                                  })
+                                }
+                                className="h-28 w-full object-cover rounded-lg border border-slate-200 cursor-pointer hover:opacity-90"
+                              />
+                            ) : (
+                              <div className="h-28 rounded-lg border border-dashed border-slate-200 flex items-center justify-center text-[10px] text-slate-400">لا توجد صورة</div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -3620,21 +3860,26 @@ export default function AdminManager({
         </div>
       )}
 
-      {/* MODAL: ADD USER (الدور الموحد + رقم المستخدم التلقائي + بدون تقييد PIN) */}
+      {/* MODAL: UNIFIED USER & PERMISSIONS (إضافة مستخدم جديد بالهيكل والصلاحيات الموحدة) */}
       {showAddUserModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto border-2 border-[#D49A3D]/40">
             <div className="flex items-center justify-between border-b pb-3">
-              <h4 className="font-black text-base text-[#1B1111] flex items-center gap-2">
-                <Users className="w-5 h-5 text-[#682722]" />
-                <span>إضافة مستخدم جديد للنظام</span>
-              </h4>
-              <button onClick={() => setShowAddUserModal(false)} className="text-slate-400 font-bold">✕</button>
+              <div>
+                <h4 className="font-black text-base text-[#1B1111] flex items-center gap-2">
+                  <Users className="w-5 h-5 text-[#682722]" />
+                  <span>نافذة إدارة المستخدم والصلاحيات الموحدة</span>
+                </h4>
+                <p className="text-[11px] text-slate-500 font-bold mt-0.5">
+                  إعداد الهيكل الإداري، الإدارة المنتمي لها، نطاق المتابعة، والاشتراطات الإجرائية
+                </p>
+              </div>
+              <button onClick={() => setShowAddUserModal(false)} className="text-slate-400 hover:text-slate-600 font-bold p-1">✕</button>
             </div>
 
             <div className="bg-amber-50 rounded-2xl p-3 border border-amber-200 flex items-center justify-between">
-              <span className="text-xs font-black text-amber-950">رقم المستخدم التسلسلي المتوقع:</span>
-              <span className="font-mono text-sm font-black bg-amber-200/80 text-amber-900 px-2.5 py-0.5 rounded-lg border border-amber-300">
+              <span className="text-xs font-black text-amber-950">رقم المستخدم التسلسلي المعتمد للنظام:</span>
+              <span className="font-mono text-sm font-black bg-amber-200/80 text-amber-900 px-3 py-1 rounded-xl border border-amber-300">
                 #{nextUserNumber}
               </span>
             </div>
@@ -3647,6 +3892,10 @@ export default function AdminManager({
                 try {
                   const form = e.currentTarget;
                   const formData = new FormData(form);
+                  formData.set("supervised_departments", userFormSupervisedDepts.join(","));
+                  formData.set("home_department_code", userFormHomeDept);
+                  formData.set("home_section_code", userFormHomeSec);
+                  formData.set("department_code", userFormHomeDept || "dept_admin");
                   const res = await createUserAction(formData);
                   if (res.success) {
                     showNotification("success", `تمت إضافة المستخدم بنجاح! رقم المستخدم: #${res.userNumber || "جديد"}`);
@@ -3661,94 +3910,206 @@ export default function AdminManager({
                   setIsSubmitting(false);
                 }
               }}
-              className="space-y-3 text-xs"
+              className="space-y-4 text-xs"
             >
-              <div>
-                <label className="block font-black text-slate-800 mb-1">الاسم الكامل *</label>
-                <input name="full_name" required placeholder="اسم الموظف الثلاثي..." className="w-full h-10 px-3 bg-[#FAF7F4] border rounded-xl font-bold" />
-              </div>
-              <div>
-                <label className="block font-black text-slate-800 mb-1">المسمى الوظيفي</label>
-                <input name="job_title" placeholder="مثال: شيف مقبلات، مسؤول صيانة التبريد..." className="w-full h-10 px-3 bg-[#FAF7F4] border rounded-xl font-bold" />
-              </div>
-              <div>
-                <label className="block font-black text-slate-800 mb-1">رمز المرور (PIN - 4 أرقام) *</label>
-                <input name="pin_code" required maxLength={4} pattern="\d{4}" placeholder="مثال: 5544" className="w-full h-10 px-3 bg-[#FAF7F4] border rounded-xl font-mono font-black text-center text-sm" />
-                <span className="text-[10px] text-slate-400 font-bold block mt-0.5">يمكن استخدام أي رمز مرور حتى لو كان مستخدماً من موظف آخر</span>
+              {/* القسم 1: البيانات الأساسية */}
+              <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200 space-y-3">
+                <h5 className="font-black text-[#1B1111] text-xs flex items-center gap-1.5 pb-2 border-b border-slate-200">
+                  <span className="w-2 h-2 rounded-full bg-[#682722]"></span>
+                  <span>1. البيانات الشخصية وبيانات الدخول</span>
+                </h5>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-black text-slate-800 mb-1">الاسم الكامل *</label>
+                    <input name="full_name" required placeholder="اسم الموظف الثلاثي..." className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl font-bold focus:ring-2 focus:ring-[#D49A3D]/40 focus:outline-none" />
+                  </div>
+                  <div>
+                    <label className="block font-black text-slate-800 mb-1">المسمى الوظيفي الصريح</label>
+                    <input name="job_title" placeholder="مثال: شيف عام، إداري متابعة، مفتش جودة..." className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl font-bold focus:ring-2 focus:ring-[#D49A3D]/40 focus:outline-none" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block font-black text-slate-800 mb-1">رمز المرور الشخصي (PIN - 4 أرقام) *</label>
+                  <input name="pin_code" required maxLength={4} pattern="\d{4}" placeholder="مثال: 5544" className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl font-mono font-black text-center text-sm focus:ring-2 focus:ring-[#D49A3D]/40 focus:outline-none" />
+                  <span className="text-[10px] text-slate-400 font-bold block mt-0.5">يمكن استخدام أي رمز مرور حتى لو كان مكرراً لدى موظف آخر</span>
+                </div>
               </div>
 
-              {/* UNIFIED JOB ROLE (الدور الوظيفي الموحد - نقرة واحدة) */}
-              <div>
-                <label className="block font-black text-slate-800 mb-1">الدور الوظيفي الموحد *</label>
-                <select
-                  name="custom_role_id"
-                  required
-                  className="w-full h-10 px-3 bg-[#FAF7F4] border rounded-xl font-bold text-purple-900"
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    const form = e.target.form;
-                    if (val && val !== "none") {
-                      const selectedCrole = roles.find((r) => String(r.id) === val);
-                      if (selectedCrole) {
-                        const roleInput = form?.elements.namedItem("role") as HTMLInputElement;
-                        if (roleInput) roleInput.value = selectedCrole.category || selectedCrole.role_type || "field_agent";
-                        
-                        // Auto set department if single department
-                        if (selectedCrole.allowed_departments && selectedCrole.allowed_departments !== "all") {
-                          const depts = selectedCrole.allowed_departments.split(",");
-                          if (depts.length === 1) {
-                            const deptSelect = form?.elements.namedItem("department_code") as HTMLSelectElement;
-                            if (deptSelect) deptSelect.value = depts[0];
+              {/* القسم 2: الهيكل الإداري ونطاق الانتماء والمتابعة */}
+              <div className="p-4 bg-amber-50/40 rounded-2xl border border-amber-200/80 space-y-3">
+                <h5 className="font-black text-[#1B1111] text-xs flex items-center gap-1.5 pb-2 border-b border-amber-200">
+                  <span className="w-2 h-2 rounded-full bg-[#D49A3D]"></span>
+                  <span>2. الهيكل الإداري (الإدارة المنتمي لها ونطاق المتابعة)</span>
+                </h5>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Home Department */}
+                  <div>
+                    <label className="block font-black text-slate-800 mb-1">
+                      الإدارة المنتمي لها أصلياً *
+                      <span className="text-[10px] text-slate-400 font-normal block">(تحدد الإدارة التي يظهر فيها كمنفذ)</span>
+                    </label>
+                    <select
+                      name="home_department_code"
+                      required
+                      value={userFormHomeDept}
+                      onChange={(e) => {
+                        setUserFormHomeDept(e.target.value);
+                        setUserFormHomeSec("");
+                      }}
+                      className="w-full h-10 px-3 bg-white border border-amber-300 rounded-xl font-bold"
+                    >
+                      <option value="">-- اختر الإدارة المنتمي لها --</option>
+                      {departments.map((d) => (
+                        <option key={d.code} value={d.code}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Home Section */}
+                  <div>
+                    <label className="block font-black text-slate-800 mb-1">
+                      القسم التشغيلي الأصيل التابع له
+                      <span className="text-[10px] text-slate-400 font-normal block">(اختياري - مصفى حسب الإدارة)</span>
+                    </label>
+                    <select
+                      name="home_section_code"
+                      value={userFormHomeSec}
+                      onChange={(e) => setUserFormHomeSec(e.target.value)}
+                      className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl font-bold"
+                    >
+                      <option value="">-- اختياري: كافة أقسام الإدارة --</option>
+                      {sections
+                        .filter((s) => !userFormHomeDept || s.department_code === userFormHomeDept)
+                        .map((s) => (
+                          <option key={s.code} value={s.code}>{s.name}</option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Unified Role */}
+                <div>
+                  <label className="block font-black text-slate-800 mb-1">الدور الوظيفي المعتمد في النظام *</label>
+                  <select
+                    name="custom_role_id"
+                    required
+                    className="w-full h-10 px-3 bg-white border border-purple-200 rounded-xl font-bold text-purple-900"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const form = e.target.form;
+                      if (val && val !== "none") {
+                        const selectedCrole = roles.find((r) => String(r.id) === val);
+                        if (selectedCrole) {
+                          const roleInput = form?.elements.namedItem("role") as HTMLInputElement;
+                          if (roleInput) roleInput.value = selectedCrole.category || selectedCrole.role_type || "field_agent";
+                          if (!userFormHomeDept && selectedCrole.allowed_departments && selectedCrole.allowed_departments !== "all") {
+                            const depts = selectedCrole.allowed_departments.split(",");
+                            if (depts.length === 1) {
+                              setUserFormHomeDept(depts[0]);
+                            }
                           }
                         }
                       }
-                    }
-                  }}
-                >
-                  <option value="">-- اختر الدور الوظيفي الموحد --</option>
-                  {roles.filter((r: any) => r.status !== "disabled").map((r: any) => (
-                    <option key={r.id} value={r.id}>
-                      🛡️ {r.name} ({r.category === "inspector" ? "رقابي/تفتيشي" : r.category === "admin" ? "إشرافي/إداري" : "تنفيذي ميداني"})
-                    </option>
-                  ))}
-                </select>
-                <input type="hidden" name="role" defaultValue="field_agent" />
+                    }}
+                  >
+                    <option value="">-- اختر الدور الوظيفي الموحد --</option>
+                    {roles.filter((r: any) => r.status !== "disabled").map((r: any) => (
+                      <option key={r.id} value={r.id}>
+                        🛡️ {r.name} ({r.category === "inspector" ? "رقابي/تفتيشي" : r.category === "admin" ? "إشرافي/إداري" : "تنفيذي ميداني"})
+                      </option>
+                    ))}
+                  </select>
+                  <input type="hidden" name="role" defaultValue="field_agent" />
+                </div>
+
+                {/* Oversight Scope: Supervised Departments */}
+                <div>
+                  <label className="block font-black text-slate-800 mb-1">
+                    نطاق الإشراف والمتابعة (المكلف بمتابعتها)
+                    <span className="text-[10px] text-slate-400 font-normal block">
+                      (حدد الإدارات التي يتابعها الموظف، مثل مفتش/إداري المتابعة والتطوير المكلف بمتابعة إدارات أخرى)
+                    </span>
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-2.5 bg-white rounded-xl border border-slate-200">
+                    {departments.map((d) => {
+                      const isChecked = userFormSupervisedDepts.includes(d.code);
+                      return (
+                        <label key={d.code} className="flex items-center gap-1.5 cursor-pointer text-[11px] font-bold text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setUserFormSupervisedDepts([...userFormSupervisedDepts, d.code]);
+                              } else {
+                                setUserFormSupervisedDepts(userFormSupervisedDepts.filter((code) => code !== d.code));
+                              }
+                            }}
+                            className="rounded text-[#682722] focus:ring-0"
+                          />
+                          <span className="truncate">{d.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block font-black text-slate-800 mb-1">الإدارة التابع لها *</label>
-                <select name="department_code" required className="w-full h-10 px-3 bg-[#FAF7F4] border rounded-xl font-bold">
-                  <option value="">-- اختر الإدارة --</option>
-                  {departments.map((d) => (
-                    <option key={d.code} value={d.code}>{d.name}</option>
-                  ))}
-                </select>
+              {/* القسم 3: الاشتراطات والصلاحيات الإضافية (توسيع أو تضييق الدور) */}
+              <div className="p-4 bg-emerald-50/40 rounded-2xl border border-emerald-200/80 space-y-2.5">
+                <h5 className="font-black text-[#1B1111] text-xs flex items-center gap-1.5 pb-2 border-b border-emerald-200">
+                  <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                  <span>3. الاشتراطات والصلاحيات الإضافية (توسيع أو تضييق الدور)</span>
+                </h5>
+
+                <div className="space-y-2">
+                  <label className="flex items-start gap-2 cursor-pointer p-2 rounded-xl hover:bg-emerald-100/50 transition-colors">
+                    <input type="checkbox" name="can_receive_cases" value="1" defaultChecked={true} className="mt-0.5 rounded text-emerald-600" />
+                    <div>
+                      <span className="font-black text-slate-800 block">إمكانية استلام تكليفات وإجراءات تصحيحية ميدانية</span>
+                      <span className="text-[10px] text-slate-500 font-medium">يظهر اسمه في قائمة التكليفات الخاصة بإدارته المنتمي لها فقط</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2 cursor-pointer p-2 rounded-xl hover:bg-emerald-100/50 transition-colors">
+                    <input type="checkbox" name="can_close_assigned_cases" value="1" className="mt-0.5 rounded text-emerald-600" />
+                    <div>
+                      <span className="font-black text-slate-800 block">صلاحية مراجعة واعتماد المهام المسندة</span>
+                      <span className="text-[10px] text-slate-500 font-medium">يمنع النظام ذاتياً اعتماده لأي إجراء نفذه بنفسه (ضبط ثنائي)</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2 cursor-pointer p-2 rounded-xl hover:bg-emerald-100/50 transition-colors">
+                    <input type="checkbox" name="can_export_excel" value="1" className="mt-0.5 rounded text-emerald-600" />
+                    <div>
+                      <span className="font-black text-slate-800 block">منح صلاحية تصدير تقارير الإكسل المتقدمة</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2 cursor-pointer p-2 rounded-xl hover:bg-emerald-100/50 transition-colors">
+                    <input type="checkbox" name="can_view_daily_archive" value="1" className="mt-0.5 rounded text-emerald-600" />
+                    <div>
+                      <span className="font-black text-slate-800 block">منح صلاحية الاطلاع على أرشيف التقارير اليومية</span>
+                    </div>
+                  </label>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 pt-1">
-                <input type="checkbox" name="can_export_excel" value="1" id="excel_perm" />
-                <label htmlFor="excel_perm" className="font-bold text-slate-700 cursor-pointer">منح صلاحية تصدير تقارير الإكسل</label>
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <input type="checkbox" name="can_view_daily_archive" value="1" id="archive_perm" />
-                <label htmlFor="archive_perm" className="font-bold text-slate-700 cursor-pointer">منح صلاحية الاطلاع على أرشيف التقارير (لإدارته)</label>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t">
-                <button type="button" onClick={() => setShowAddUserModal(false)} className="px-4 py-2 text-slate-600 font-bold">إلغاء</button>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button type="button" onClick={() => setShowAddUserModal(false)} className="px-4 py-2.5 text-slate-600 font-bold hover:bg-slate-100 rounded-xl">إلغاء</button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-5 py-2 bg-[#682722] hover:bg-[#7D2F28] disabled:opacity-50 text-white rounded-xl font-black shadow-sm flex items-center gap-1.5 cursor-pointer"
+                  className="px-6 py-2.5 bg-gradient-to-r from-[#682722] to-[#8C342E] hover:opacity-95 disabled:opacity-50 text-white rounded-xl font-black shadow-md flex items-center gap-2 cursor-pointer"
                 >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>جارٍ الحفظ...</span>
+                      <span>جارٍ الحفظ والتهيئة...</span>
                     </>
                   ) : (
-                    <span>حفظ المستخدم</span>
+                    <span>حفظ واعتماد المستخدم</span>
                   )}
                 </button>
               </div>
@@ -3757,21 +4118,26 @@ export default function AdminManager({
         </div>
       )}
 
-      {/* MODAL: EDIT USER (الدور الموحد + بدون تقييد PIN) */}
+      {/* MODAL: EDIT USER (نافذة التعديل الموحدة الكاملة) */}
       {showEditUserModal && editingUser && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto border-2 border-blue-400/40">
             <div className="flex items-center justify-between border-b pb-3">
-              <h4 className="font-black text-base text-[#1B1111] flex items-center gap-2">
-                <Edit3 className="w-5 h-5 text-blue-600" />
-                <span>تعديل بيانات المستخدم ({editingUser.full_name})</span>
-              </h4>
-              <button onClick={() => setShowEditUserModal(false)} className="text-slate-400 font-bold">✕</button>
+              <div>
+                <h4 className="font-black text-base text-[#1B1111] flex items-center gap-2">
+                  <Edit3 className="w-5 h-5 text-blue-600" />
+                  <span>تعديل بيانات وصلاحيات المستخدم ({editingUser.full_name})</span>
+                </h4>
+                <p className="text-[11px] text-slate-500 font-bold mt-0.5">
+                  تعديل الهيكل، الإدارة المنتمي لها، نطاق المتابعة، والاشتراطات الإضافية
+                </p>
+              </div>
+              <button onClick={() => setShowEditUserModal(false)} className="text-slate-400 hover:text-slate-600 font-bold p-1">✕</button>
             </div>
 
-            <div className="bg-amber-50 rounded-2xl p-3 border border-amber-200 flex items-center justify-between">
-              <span className="text-xs font-black text-amber-950">رقم المستخدم المعتمد:</span>
-              <span className="font-mono text-sm font-black bg-amber-200/80 text-amber-900 px-2.5 py-0.5 rounded-lg border border-amber-300">
+            <div className="bg-blue-50 rounded-2xl p-3 border border-blue-200 flex items-center justify-between">
+              <span className="text-xs font-black text-blue-950">رقم المستخدم المعتمد:</span>
+              <span className="font-mono text-sm font-black bg-blue-200/80 text-blue-900 px-3 py-1 rounded-xl border border-blue-300">
                 #{editingUser.user_number || editingUser.id}
               </span>
             </div>
@@ -3784,9 +4150,13 @@ export default function AdminManager({
                 try {
                   const form = e.currentTarget;
                   const formData = new FormData(form);
+                  formData.set("supervised_departments", userFormSupervisedDepts.join(","));
+                  formData.set("home_department_code", userFormHomeDept);
+                  formData.set("home_section_code", userFormHomeSec);
+                  formData.set("department_code", userFormHomeDept || "dept_admin");
                   const res = await updateUserAction(editingUser.id, formData);
                   if (res.success) {
-                    showNotification("success", "تم تعديل بيانات المستخدم بنجاح!");
+                    showNotification("success", "تم تعديل بيانات وصلاحيات المستخدم بنجاح!");
                     setShowEditUserModal(false);
                     router.refresh();
                   } else {
@@ -3798,109 +4168,234 @@ export default function AdminManager({
                   setIsSubmitting(false);
                 }
               }}
-              className="space-y-3 text-xs"
+              className="space-y-4 text-xs"
             >
-              <div>
-                <label className="block font-black text-slate-800 mb-1">الاسم الكامل *</label>
-                <input
-                  name="full_name"
-                  required
-                  value={userFormName}
-                  onChange={(e) => setUserFormName(e.target.value)}
-                  className="w-full h-10 px-3 bg-[#FAF7F4] border rounded-xl font-bold"
-                />
-              </div>
-              <div>
-                <label className="block font-black text-slate-800 mb-1">المسمى الوظيفي</label>
-                <input
-                  name="job_title"
-                  value={userFormJobTitle}
-                  onChange={(e) => setUserFormJobTitle(e.target.value)}
-                  placeholder="مثال: شيف مقبلات، مسؤول صيانة التبريد..."
-                  className="w-full h-10 px-3 bg-[#FAF7F4] border rounded-xl font-bold"
-                />
+              {/* القسم 1: البيانات الشخصية */}
+              <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200 space-y-3">
+                <h5 className="font-black text-[#1B1111] text-xs flex items-center gap-1.5 pb-2 border-b border-slate-200">
+                  <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                  <span>1. البيانات الشخصية وبيانات الدخول</span>
+                </h5>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-black text-slate-800 mb-1">الاسم الكامل *</label>
+                    <input
+                      name="full_name"
+                      required
+                      value={userFormName}
+                      onChange={(e) => setUserFormName(e.target.value)}
+                      className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-black text-slate-800 mb-1">المسمى الوظيفي</label>
+                    <input
+                      name="job_title"
+                      value={userFormJobTitle}
+                      onChange={(e) => setUserFormJobTitle(e.target.value)}
+                      placeholder="مثال: شيف عام، إداري متابعة، مفتش جودة..."
+                      className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl font-bold"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block font-black text-slate-800 mb-1">رمز المرور الشخصي (PIN - 4 أرقام)</label>
+                  <input
+                    name="pin_code"
+                    maxLength={4}
+                    pattern="\d{4}"
+                    placeholder="اتركه فارغاً للإبقاء على الرمز الحالي..."
+                    className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl font-mono font-black text-center text-sm"
+                  />
+                  <span className="text-[10px] text-slate-400 font-bold block mt-0.5">اتركه فارغاً دون تغيير إلا إذا رغبت بتعيين رمز جديد</span>
+                </div>
               </div>
 
-              {/* UNIFIED JOB ROLE (الدور الوظيفي الموحد) */}
-              <div>
-                <label className="block font-black text-slate-800 mb-1">الدور الوظيفي الموحد *</label>
-                <select
-                  name="custom_role_id"
-                  value={userFormCustomRoleId}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setUserFormCustomRoleId(val);
-                    if (val && val !== "none") {
-                      const selectedCrole = roles.find((r) => String(r.id) === val);
-                      if (selectedCrole) {
-                        setUserFormRole(selectedCrole.category || selectedCrole.role_type || "field_agent");
-                        if (selectedCrole.allowed_departments && selectedCrole.allowed_departments !== "all") {
-                          const depts = selectedCrole.allowed_departments.split(",");
-                          if (depts.length === 1) {
-                            setUserFormDept(depts[0]);
-                          }
+              {/* القسم 2: الهيكل الإداري ونطاق الانتماء والمتابعة */}
+              <div className="p-4 bg-amber-50/40 rounded-2xl border border-amber-200/80 space-y-3">
+                <h5 className="font-black text-[#1B1111] text-xs flex items-center gap-1.5 pb-2 border-b border-amber-200">
+                  <span className="w-2 h-2 rounded-full bg-[#D49A3D]"></span>
+                  <span>2. الهيكل الإداري (الإدارة المنتمي لها ونطاق المتابعة)</span>
+                </h5>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-black text-slate-800 mb-1">
+                      الإدارة المنتمي لها أصلياً *
+                      <span className="text-[10px] text-slate-400 font-normal block">(تحدد الإدارة التي يظهر فيها كمنفذ)</span>
+                    </label>
+                    <select
+                      name="home_department_code"
+                      required
+                      value={userFormHomeDept}
+                      onChange={(e) => {
+                        setUserFormHomeDept(e.target.value);
+                        setUserFormHomeSec("");
+                      }}
+                      className="w-full h-10 px-3 bg-white border border-amber-300 rounded-xl font-bold"
+                    >
+                      <option value="">-- اختر الإدارة المنتمي لها --</option>
+                      {departments.map((d) => (
+                        <option key={d.code} value={d.code}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-black text-slate-800 mb-1">
+                      القسم التشغيلي الأصيل التابع له
+                      <span className="text-[10px] text-slate-400 font-normal block">(اختياري - مصفى حسب الإدارة)</span>
+                    </label>
+                    <select
+                      name="home_section_code"
+                      value={userFormHomeSec}
+                      onChange={(e) => setUserFormHomeSec(e.target.value)}
+                      className="w-full h-10 px-3 bg-white border border-slate-200 rounded-xl font-bold"
+                    >
+                      <option value="">-- اختياري: كافة أقسام الإدارة --</option>
+                      {sections
+                        .filter((s) => !userFormHomeDept || s.department_code === userFormHomeDept)
+                        .map((s) => (
+                          <option key={s.code} value={s.code}>{s.name}</option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-black text-slate-800 mb-1">الدور الوظيفي المعتمد في النظام *</label>
+                  <select
+                    name="custom_role_id"
+                    value={userFormCustomRoleId}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setUserFormCustomRoleId(val);
+                      if (val && val !== "none") {
+                        const selectedCrole = roles.find((r) => String(r.id) === val);
+                        if (selectedCrole) {
+                          setUserFormRole(selectedCrole.category || selectedCrole.role_type || "field_agent");
                         }
                       }
-                    }
-                  }}
-                  className="w-full h-10 px-3 bg-[#FAF7F4] border rounded-xl font-bold text-purple-900"
-                >
-                  <option value="none">-- استخدام الدور التقني المباشر --</option>
-                  {roles.filter((r: any) => r.status !== "disabled").map((r: any) => (
-                    <option key={r.id} value={r.id}>
-                      🛡️ {r.name} ({r.category === "inspector" ? "رقابي/تفتيشي" : r.category === "admin" ? "إشرافي/إداري" : "تنفيذي ميداني"})
-                    </option>
-                  ))}
-                </select>
-                <input type="hidden" name="role" value={userFormRole} />
+                    }}
+                    className="w-full h-10 px-3 bg-white border border-purple-200 rounded-xl font-bold text-purple-900"
+                  >
+                    <option value="none">-- استخدام الدور المباشر --</option>
+                    {roles.filter((r: any) => r.status !== "disabled").map((r: any) => (
+                      <option key={r.id} value={r.id}>
+                        🛡️ {r.name} ({r.category === "inspector" ? "رقابي/تفتيشي" : r.category === "admin" ? "إشرافي/إداري" : "تنفيذي ميداني"})
+                      </option>
+                    ))}
+                  </select>
+                  <input type="hidden" name="role" value={userFormRole} />
+                </div>
+
+                {/* Oversight Scope */}
+                <div>
+                  <label className="block font-black text-slate-800 mb-1">
+                    نطاق الإشراف والمتابعة (المكلف بمتابعتها)
+                    <span className="text-[10px] text-slate-400 font-normal block">
+                      (حدد الإدارات التي يتابعها الموظف، مثل مفتش/إداري المتابعة والتطوير المكلف بمتابعة إدارات أخرى)
+                    </span>
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-2.5 bg-white rounded-xl border border-slate-200">
+                    {departments.map((d) => {
+                      const isChecked = userFormSupervisedDepts.includes(d.code);
+                      return (
+                        <label key={d.code} className="flex items-center gap-1.5 cursor-pointer text-[11px] font-bold text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setUserFormSupervisedDepts([...userFormSupervisedDepts, d.code]);
+                              } else {
+                                setUserFormSupervisedDepts(userFormSupervisedDepts.filter((code) => code !== d.code));
+                              }
+                            }}
+                            className="rounded text-blue-600 focus:ring-0"
+                          />
+                          <span className="truncate">{d.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block font-black text-slate-800 mb-1">الإدارة التابع لها *</label>
-                <select
-                  name="department_code"
-                  required
-                  value={userFormDept}
-                  onChange={(e) => setUserFormDept(e.target.value)}
-                  className="w-full h-10 px-3 bg-[#FAF7F4] border rounded-xl font-bold"
-                >
-                  <option value="">-- اختر الإدارة --</option>
-                  {departments.map((d) => (
-                    <option key={d.code} value={d.code}>{d.name}</option>
-                  ))}
-                </select>
+              {/* القسم 3: الاشتراطات والصلاحيات الإضافية */}
+              <div className="p-4 bg-emerald-50/40 rounded-2xl border border-emerald-200/80 space-y-2.5">
+                <h5 className="font-black text-[#1B1111] text-xs flex items-center gap-1.5 pb-2 border-b border-emerald-200">
+                  <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                  <span>3. الاشتراطات والصلاحيات الإضافية (توسيع أو تضييق الدور)</span>
+                </h5>
+
+                <div className="space-y-2">
+                  <label className="flex items-start gap-2 cursor-pointer p-2 rounded-xl hover:bg-emerald-100/50 transition-colors">
+                    <input
+                      type="checkbox"
+                      name="can_receive_cases"
+                      value="1"
+                      checked={userFormCanReceiveCases}
+                      onChange={(e) => setUserFormCanReceiveCases(e.target.checked)}
+                      className="mt-0.5 rounded text-emerald-600"
+                    />
+                    <div>
+                      <span className="font-black text-slate-800 block">إمكانية استلام تكليفات وإجراءات تصحيحية ميدانية</span>
+                      <span className="text-[10px] text-slate-500 font-medium">يظهر اسمه في قائمة التكليفات الخاصة بإدارته المنتمي لها فقط</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2 cursor-pointer p-2 rounded-xl hover:bg-emerald-100/50 transition-colors">
+                    <input
+                      type="checkbox"
+                      name="can_close_assigned_cases"
+                      value="1"
+                      checked={userFormCanCloseCases}
+                      onChange={(e) => setUserFormCanCloseCases(e.target.checked)}
+                      className="mt-0.5 rounded text-emerald-600"
+                    />
+                    <div>
+                      <span className="font-black text-slate-800 block">صلاحية مراجعة واعتماد المهام المسندة</span>
+                      <span className="text-[10px] text-slate-500 font-medium">يمنع النظام ذاتياً اعتماده لأي إجراء نفذه بنفسه (ضبط ثنائي)</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2 cursor-pointer p-2 rounded-xl hover:bg-emerald-100/50 transition-colors">
+                    <input
+                      type="checkbox"
+                      name="can_export_excel"
+                      value="1"
+                      checked={userFormCanExcel}
+                      onChange={(e) => setUserFormCanExcel(e.target.checked)}
+                      className="mt-0.5 rounded text-emerald-600"
+                    />
+                    <div>
+                      <span className="font-black text-slate-800 block">منح صلاحية تصدير تقارير الإكسل المتقدمة</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2 cursor-pointer p-2 rounded-xl hover:bg-emerald-100/50 transition-colors">
+                    <input
+                      type="checkbox"
+                      name="can_view_daily_archive"
+                      value="1"
+                      checked={userFormCanArchive}
+                      onChange={(e) => setUserFormCanArchive(e.target.checked)}
+                      className="mt-0.5 rounded text-emerald-600"
+                    />
+                    <div>
+                      <span className="font-black text-slate-800 block">منح صلاحية الاطلاع على أرشيف التقارير اليومية</span>
+                    </div>
+                  </label>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  name="can_export_excel"
-                  value="1"
-                  id="edit_excel_perm"
-                  checked={userFormCanExcel}
-                  onChange={(e) => setUserFormCanExcel(e.target.checked)}
-                />
-                <label htmlFor="edit_excel_perm" className="font-bold text-slate-700 cursor-pointer">منح صلاحية تصدير تقارير الإكسل</label>
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  name="can_view_daily_archive"
-                  value="1"
-                  id="edit_archive_perm"
-                  checked={userFormCanArchive}
-                  onChange={(e) => setUserFormCanArchive(e.target.checked)}
-                />
-                <label htmlFor="edit_archive_perm" className="font-bold text-slate-700 cursor-pointer">منح صلاحية الاطلاع على أرشيف التقارير (لإدارته)</label>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t">
-                <button type="button" onClick={() => setShowEditUserModal(false)} className="px-4 py-2 text-slate-600 font-bold">إلغاء</button>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button type="button" onClick={() => setShowEditUserModal(false)} className="px-4 py-2.5 text-slate-600 font-bold hover:bg-slate-100 rounded-xl">إلغاء</button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl font-black shadow-sm flex items-center gap-1.5 cursor-pointer"
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl font-black shadow-md flex items-center gap-2 cursor-pointer"
                 >
                   {isSubmitting ? (
                     <>
@@ -3908,7 +4403,7 @@ export default function AdminManager({
                       <span>جارٍ التحديث...</span>
                     </>
                   ) : (
-                    <span>تحديث المستخدم</span>
+                    <span>تحديث واعتماد المستخدم</span>
                   )}
                 </button>
               </div>
@@ -4493,6 +4988,139 @@ export default function AdminManager({
         canExportReports={hasActionFeature("export_excel")}
       />
       <ExcelImportModal isOpen={showExcelImport} onClose={() => setShowExcelImport(false)} />
+
+      {/* 🖼️ Photo Comparison Lightbox Modal (المقارنة البصرية الشاملة قبل / بعد) */}
+      {comparisonModal && (
+        <div className="fixed inset-0 z-50 bg-[#1B1111]/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-4xl w-full border-2 border-[#D49A3D]/40 shadow-2xl overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-l from-[#1B1111] via-[#2A1C16] to-[#1B1111] p-4 sm:p-5 text-white flex items-center justify-between border-b border-[#D49A3D]/30">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-[#D49A3D] text-[#1B1111] rounded-2xl shadow-sm">
+                  <Eye className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-black text-sm sm:text-base text-white">
+                      مقارنة التوثيق البصري: حالة #{comparisonModal.caseNumber}
+                    </h3>
+                    <span className="text-[10px] font-bold bg-[#682722] text-amber-100 px-2 py-0.5 rounded-full border border-amber-500/30">
+                      قبل وبعد
+                    </span>
+                  </div>
+                  <p className="text-xs text-amber-200/80 font-semibold mt-0.5">
+                    {comparisonModal.title} {comparisonModal.locationName ? `— ${comparisonModal.locationName}` : ""}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setComparisonModal(null)}
+                className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-xl transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body: Side-by-Side High Res Photos */}
+            <div className="p-4 sm:p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Before Photo Card */}
+                <div className="bg-[#FAF7F4] rounded-2xl border-2 border-rose-200 p-4 flex flex-col space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-rose-900 bg-rose-100 px-2.5 py-1 rounded-lg border border-rose-300 flex items-center gap-1.5">
+                      <AlertOctagon className="w-3.5 h-3.5 text-rose-700" />
+                      <span>📸 صورة المخالفة (قبل المعالجة)</span>
+                    </span>
+                    {comparisonModal.photoBefore && (
+                      <a
+                        href={comparisonModal.photoBefore}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] font-bold text-slate-500 hover:text-slate-800 underline"
+                      >
+                        فتح بالحجم الأصلي ↗
+                      </a>
+                    )}
+                  </div>
+                  <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-900/5 min-h-[260px] flex items-center justify-center">
+                    {comparisonModal.photoBefore ? (
+                      <img
+                        src={comparisonModal.photoBefore}
+                        alt="صورة المخالفة (قبل)"
+                        className="object-contain max-h-[380px] w-full rounded-lg"
+                      />
+                    ) : (
+                      <span className="text-xs text-slate-400 font-bold">لا تتوفر صورة قبل المعالجة</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* After Photo Card */}
+                <div className="bg-[#FAF7F4] rounded-2xl border-2 border-emerald-200 p-4 flex flex-col space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-emerald-900 bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-300 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>✨ صورة الإنجاز (بعد المعالجة)</span>
+                    </span>
+                    {comparisonModal.photoAfter && (
+                      <a
+                        href={comparisonModal.photoAfter}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] font-bold text-slate-500 hover:text-slate-800 underline"
+                      >
+                        فتح بالحجم الأصلي ↗
+                      </a>
+                    )}
+                  </div>
+                  <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-900/5 min-h-[260px] flex items-center justify-center">
+                    {comparisonModal.photoAfter ? (
+                      <img
+                        src={comparisonModal.photoAfter}
+                        alt="صورة الإنجاز (بعد)"
+                        className="object-contain max-h-[380px] w-full rounded-lg"
+                      />
+                    ) : (
+                      <span className="text-xs text-slate-400 font-bold">لم يتم تسجيل صورة بعد المعالجة</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Taken & Executor Info */}
+              {(comparisonModal.actionTaken || comparisonModal.executorName) && (
+                <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-xs text-slate-700 space-y-1">
+                  {comparisonModal.executorName && (
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <User className="w-3.5 h-3.5 text-slate-500" />
+                      <span>المنفذ الميداني:</span>
+                      <span className="text-[#1B1111] font-black">{comparisonModal.executorName}</span>
+                    </div>
+                  )}
+                  {comparisonModal.actionTaken && (
+                    <div>
+                      <span className="font-bold text-slate-500 block mb-0.5">الإجراء المتخذ:</span>
+                      <p className="font-semibold text-slate-800">{comparisonModal.actionTaken}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setComparisonModal(null)}
+                className="px-5 py-2.5 bg-[#1B1111] hover:bg-[#682722] text-white font-black text-xs rounded-xl shadow-md transition-all"
+              >
+                إغلاق نافذة المقارنة
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

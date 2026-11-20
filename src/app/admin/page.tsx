@@ -47,19 +47,19 @@ export default async function AdminDashboard() {
   const permissionsMatrix = matrixRes.rows as unknown as any[];
 
   // Users with user_number, excel, daily report and archive permissions
-  const usersRes = await db.execute("SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, is_protected, can_export_excel, can_create_daily_report, COALESCE(can_view_daily_archive, 0) as can_view_daily_archive, custom_role_id, custom_role_name, created_at FROM users ORDER BY COALESCE(user_number, id) ASC");
+  const usersRes = await db.execute("SELECT id, user_number, full_name, pin_code, role, department_code, department_name, status, job_title, is_protected, can_export_excel, can_create_daily_report, COALESCE(can_view_daily_archive, 0) as can_view_daily_archive, custom_role_id, custom_role_name, created_at, home_department_code, home_section_code, supervised_departments, can_receive_cases, can_close_assigned_cases FROM users ORDER BY COALESCE(user_number, id) ASC");
   const allUsers = usersRes.rows as unknown as any[];
 
   const canListExecutors = canViewFeature("view_executor_directory") || canViewFeature("triage_assign") || canViewFeature("triage_direct_user");
   const canListExecutorsAcrossDepartments = canViewFeatureAll("view_executor_directory") || canViewFeatureAll("triage_assign") || canViewFeatureAll("triage_direct_user");
   const fieldRoles = allUsers
-    .filter((u: any) => u.role === "field_agent" && u.status !== "disabled" && canListExecutors && (canListExecutorsAcrossDepartments || String(u.department_code) === userDept))
+    .filter((u: any) => (u.role === "field_agent" || Number(u.can_receive_cases) === 1) && u.status !== "disabled" && canListExecutors && (canListExecutorsAcrossDepartments || String(u.home_department_code || u.department_code) === userDept))
     .map((r: any) => ({
       id: Number(r.id),
       user_number: r.user_number ? Number(r.user_number) : undefined,
       userNumber: r.user_number ? Number(r.user_number) : undefined,
-      code: String(r.department_code),
-      department_code: String(r.department_code),
+      code: String(r.home_department_code || r.department_code),
+      department_code: String(r.home_department_code || r.department_code),
       department_name: String(r.department_name),
       name: String(r.department_name),
       full_name: String(r.full_name),
@@ -67,6 +67,8 @@ export default async function AdminDashboard() {
       job_title: r.job_title ? String(r.job_title) : undefined,
       jobTitle: r.job_title ? String(r.job_title) : undefined,
       role: String(r.role),
+      home_department_code: r.home_department_code ? String(r.home_department_code) : undefined,
+      home_section_code: r.home_section_code ? String(r.home_section_code) : undefined,
     }));
 
   // Categories (حالات عدم المطابقة) with department and section names

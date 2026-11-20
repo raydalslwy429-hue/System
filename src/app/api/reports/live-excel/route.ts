@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
           c.id, c.case_number, c.internal_id, c.department_code, c.department_name,
           c.location_code, c.location_name, c.nc_code, c.nc_name,
           c.inspector_name, c.inspector_pin, c.description, c.root_cause, c.inspector_notes,
-          c.status, c.current_round, c.assigned_roles, c.obs_date, c.obs_time,
+          c.status, c.current_round, c.assigned_roles, c.obs_date, c.obs_time, c.photo_before,
           c.created_at, c.closed_at, c.closed_feedback, c.in_progress_note
         FROM cases_master c
         WHERE 1=1
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
       const allAssignments = asgRes.rows as unknown as any[];
 
       const execRes = await db.execute(
-        "SELECT id, exec_id, case_id, case_number, assignment_id, round, executor_name, executor_role, role_code, action_taken, notes, created_at FROM case_executions ORDER BY case_id ASC, round ASC, id ASC"
+        "SELECT id, exec_id, case_id, case_number, assignment_id, round, executor_name, executor_role, role_code, action_taken, notes, photo_after, created_at FROM case_executions ORDER BY case_id ASC, round ASC, id ASC"
       );
       const allExecutions = execRes.rows as unknown as any[];
 
@@ -140,6 +140,7 @@ export async function GET(request: NextRequest) {
             asgTime: fmtDate(asg.created_at),
             action: matchedExec?.action_taken || "-",
             notes: matchedExec?.notes || "-",
+            photoAfter: matchedExec?.photo_after || "-",
             resTime: fmtDate(asg.completed_at || matchedExec?.created_at),
             directives: dirParts.length > 0 ? dirParts.join(" | ") : "-",
           });
@@ -153,6 +154,7 @@ export async function GET(request: NextRequest) {
               asgTime: "-",
               action: e.action_taken || "-",
               notes: e.notes || "-",
+              photoAfter: e.photo_after || "-",
               resTime: fmtDate(e.created_at),
               directives: "-",
             });
@@ -177,6 +179,7 @@ export async function GET(request: NextRequest) {
         { header: "الوصف التفصيلي لعدم المطابقة", key: "description", width: 240 },
         { header: "السبب الجذري المرصود", key: "root_cause", width: 200 },
         { header: "ملاحظات وتوجيهات المفتش", key: "inspector_notes", width: 200 },
+        { header: "رابط صورة المخالفة (قبل المعالجة)", key: "photo_before", width: 180 },
         { header: "الحالة العامة للبلاغ", key: "status_label", width: 140 },
         { header: "الجولة الحالية", key: "current_round", width: 90 },
         { header: "تاريخ ووقت تسجيل البلاغ", key: "created_at", width: 140 },
@@ -189,6 +192,7 @@ export async function GET(request: NextRequest) {
           { header: `(السيناريو ${i}) تاريخ ووقت الإسناد`, key: `s${i}_asg_time`, width: 140 },
           { header: `(السيناريو ${i}) تفاصيل الإجراء الميداني المتخذ`, key: `s${i}_action`, width: 220 },
           { header: `(السيناريو ${i}) ملاحظات المنفذ الميداني`, key: `s${i}_notes`, width: 200 },
+          { header: `(السيناريو ${i}) رابط صورة الإنجاز (بعد المعالجة)`, key: `s${i}_photo_after`, width: 180 },
           { header: `(السيناريو ${i}) تاريخ ووقت الرد الميداني`, key: `s${i}_response_time`, width: 140 },
           { header: `(السيناريو ${i}) التوجيهات والتنبيهات الإدارية`, key: `s${i}_directives`, width: 220 }
         );
@@ -217,6 +221,7 @@ export async function GET(request: NextRequest) {
           description: String(c.description || "-"),
           root_cause: String(c.root_cause || "-"),
           inspector_notes: String(c.inspector_notes || "-"),
+          photo_before: String(c.photo_before || "-"),
           status_label: mapStatus(c.status),
           current_round: Number(c.current_round || 1),
           created_at: fmtDate(c.created_at),
@@ -230,6 +235,7 @@ export async function GET(request: NextRequest) {
             row[`s${i}_asg_time`] = s.asgTime;
             row[`s${i}_action`] = s.action;
             row[`s${i}_notes`] = s.notes;
+            row[`s${i}_photo_after`] = s.photoAfter;
             row[`s${i}_response_time`] = s.resTime;
             row[`s${i}_directives`] = s.directives;
           } else {
@@ -238,6 +244,7 @@ export async function GET(request: NextRequest) {
             row[`s${i}_asg_time`] = "-";
             row[`s${i}_action`] = "-";
             row[`s${i}_notes`] = "-";
+            row[`s${i}_photo_after`] = "-";
             row[`s${i}_response_time`] = "-";
             row[`s${i}_directives`] = "-";
           }

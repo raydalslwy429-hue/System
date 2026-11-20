@@ -280,7 +280,8 @@ export async function assignCaseAction(
   caseId: number,
   targetDepts: string[],
   instructions: string,
-  targetUsers?: Array<{ id: number; name: string; deptCode: string }>
+  targetUsers?: Array<{ id: number; name: string; deptCode: string }>,
+  hiddenFields?: string[]
 ) {
   const session = await getSession();
   if (!session) {
@@ -363,8 +364,8 @@ export async function assignCaseAction(
 
   // Update cases_master
   await db.execute({
-    sql: "UPDATE cases_master SET status = 'assigned', assigned_roles = ?, updated_at = datetime('now') WHERE id = ?",
-    args: [assignedSummary.join(", "), caseId],
+    sql: "UPDATE cases_master SET status = 'assigned', assigned_roles = ?, hidden_fields_json = ?, curated_admin_instructions = ?, updated_at = datetime('now') WHERE id = ?",
+    args: [assignedSummary.join(", "), hiddenFields && hiddenFields.length > 0 ? JSON.stringify(hiddenFields) : null, instructions || null, caseId],
   });
 
   // Audit Log
@@ -524,6 +525,19 @@ export async function addInProgressNoteAction(caseId: number, note: string) {
 
   const caseNumber = Number(caseRes.rows[0].case_number);
   const round = Number(caseRes.rows[0].current_round);
+
+  // Dual-Control check: prevent executor from closing the case entirely
+  const execRes = await db.execute({
+    sql: "SELECT executor_name FROM case_executions WHERE case_id = ? AND round = ?",
+    args: [caseId, round],
+  });
+  const isSuper = session.role === "super_admin" || session.role === "general_admin";
+  if (!isSuper && execRes.rows.some((e: any) => String(e.executor_name || "").trim().toLowerCase() === session.full_name.trim().toLowerCase())) {
+    return {
+      success: false,
+      error: "قاعدة الضبط الثنائي (Dual-Control): لا يمكنك إغلاق الحالة نهائياً لأنك مسجل كمنفذ لأحد إجراءاتها؛ يجب أن يتم الاعتماد والإغلاق من قبل مسؤول إداري آخر منعاً لتضارب المصالح.",
+    };
+  }
   const trimmedNote = note.trim();
 
   // 1. Update cases_master with the direct note
@@ -686,6 +700,20 @@ export async function approveTaskAction(asgId: string, approvalNotes?: string) {
 
   if (perms.can_review === "dept_only" && deptCode !== session.department_code) {
     return { success: false, error: "لا يمكنك اعتماد مهام خارج نطاق إدارتك" };
+  }
+
+  // Dual-Control check: prevent executor from approving their own execution
+  const execRes = await db.execute({
+    sql: "SELECT executor_name FROM case_executions WHERE assignment_id = ? ORDER BY id DESC LIMIT 1",
+    args: [asgId],
+  });
+  const executorName = execRes.rows[0]?.executor_name ? String(execRes.rows[0].executor_name).trim() : null;
+  const isSuper = session.role === "super_admin" || session.role === "general_admin";
+  if (!isSuper && executorName && executorName.toLowerCase() === session.full_name.trim().toLowerCase()) {
+    return {
+      success: false,
+      error: "قاعدة الضبط الثنائي (Dual-Control): لا يمكنك مراجعة أو اعتماد إجراء تصحيحي قمت بتنفيذه بنفسك منعاً لتضارب المصالح.",
+    };
   }
 
   // Mark assignment accepted & record feedback (Without closing cases_master, so other executors can still reply)
@@ -886,6 +914,19 @@ export async function closeCaseEntirelyAction(caseId: number, closureNotes: stri
 
   const caseNumber = Number(caseRes.rows[0].case_number);
   const round = Number(caseRes.rows[0].current_round);
+
+  // Dual-Control check: prevent executor from closing the case entirely
+  const execRes = await db.execute({
+    sql: "SELECT executor_name FROM case_executions WHERE case_id = ? AND round = ?",
+    args: [caseId, round],
+  });
+  const isSuper = session.role === "super_admin" || session.role === "general_admin";
+  if (!isSuper && execRes.rows.some((e: any) => String(e.executor_name || "").trim().toLowerCase() === session.full_name.trim().toLowerCase())) {
+    return {
+      success: false,
+      error: "قاعدة الضبط الثنائي (Dual-Control): لا يمكنك إغلاق الحالة نهائياً لأنك مسجل كمنفذ لأحد إجراءاتها؛ يجب أن يتم الاعتماد والإغلاق من قبل مسؤول إداري آخر منعاً لتضارب المصالح.",
+    };
+  }
 
   await db.execute({
     sql: "UPDATE cases_master SET status = 'closed', closed_at = datetime('now'), closed_feedback = ?, updated_at = datetime('now') WHERE id = ?",
@@ -1428,14 +1469,40 @@ export async function createUserAction(formData: FormData) {
   const deptRes = await db.execute({ sql: "SELECT name FROM departments WHERE code = ?", args: [departmentCode] });
   const deptName = deptRes.rows[0]?.name ? String(deptRes.rows[0].name) : departmentCode;
 
+  const homeDeptCode = String(formData.get("home_department_code") || departmentCode || "").trim();
+  const homeSecCode = String(formData.get("home_section_code") || "").trim();
+  const supervisedDepts = String(formData.get("supervised_departments") || "").trim();
+  const canReceiveCases = formData.get("can_receive_cases") === "1" ? 1 : 0;
+  const canCloseAssignedCases = formData.get("can_close_assigned_cases") === "1" ? 1 : 0;
+
   // Auto-generate sequential user number
   const maxNumRes = await db.execute("SELECT COALESCE(MAX(user_number), 100) as max_num FROM users");
   const nextUserNumber = Number(maxNumRes.rows[0]?.max_num || 100) + 1;
 
   await db.execute({
-    sql: `INSERT INTO users (user_number, full_name, pin_code, role, department_code, department_name, job_title, can_export_excel, can_create_daily_report, can_view_daily_archive, custom_role_id, custom_role_name, is_protected, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 0, 'active')`,
-    args: [nextUserNumber, fullName, pinCode, finalRole, departmentCode, deptName, customRoleName || finalRole, canExportExcel, canViewDailyArchive, customRoleId, customRoleName],
+    sql: `INSERT INTO users (
+      user_number, full_name, pin_code, role, department_code, department_name, job_title,
+      can_export_excel, can_create_daily_report, can_view_daily_archive, custom_role_id, custom_role_name,
+      is_protected, status, home_department_code, home_section_code, supervised_departments, can_receive_cases, can_close_assigned_cases
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 0, 'active', ?, ?, ?, ?, ?)`,
+    args: [
+      nextUserNumber,
+      fullName,
+      pinCode,
+      finalRole,
+      departmentCode,
+      deptName,
+      customRoleName || finalRole,
+      canExportExcel,
+      canViewDailyArchive,
+      customRoleId,
+      customRoleName,
+      homeDeptCode,
+      homeSecCode || null,
+      supervisedDepts || null,
+      canReceiveCases,
+      canCloseAssignedCases,
+    ],
   });
 
   revalidatePath("/admin");
@@ -1486,15 +1553,37 @@ export async function updateUserAction(id: number, formData: FormData) {
   const deptRes = await db.execute({ sql: "SELECT name FROM departments WHERE code = ?", args: [departmentCode] });
   const deptName = deptRes.rows[0]?.name ? String(deptRes.rows[0].name) : departmentCode;
 
+  const homeDeptCode = String(formData.get("home_department_code") || departmentCode || "").trim();
+  const homeSecCode = String(formData.get("home_section_code") || "").trim();
+  const supervisedDepts = String(formData.get("supervised_departments") || "").trim();
+  const canReceiveCases = formData.get("can_receive_cases") === "1" ? 1 : 0;
+  const canCloseAssignedCases = formData.get("can_close_assigned_cases") === "1" ? 1 : 0;
+
   if (pinCode && pinCode.length === 4) {
     await db.execute({
-      sql: `UPDATE users SET full_name = ?, pin_code = ?, role = ?, department_code = ?, department_name = ?, job_title = ?, can_export_excel = ?, can_view_daily_archive = ?, custom_role_id = ?, custom_role_name = ? WHERE id = ? AND is_protected = 0`,
-      args: [fullName, pinCode, finalRole, departmentCode, deptName, customRoleName || finalRole, canExportExcel, canViewDailyArchive, customRoleId, customRoleName, id],
+      sql: `UPDATE users SET
+              full_name = ?, pin_code = ?, role = ?, department_code = ?, department_name = ?, job_title = ?,
+              can_export_excel = ?, can_view_daily_archive = ?, custom_role_id = ?, custom_role_name = ?,
+              home_department_code = ?, home_section_code = ?, supervised_departments = ?, can_receive_cases = ?, can_close_assigned_cases = ?
+            WHERE id = ? AND is_protected = 0`,
+      args: [
+        fullName, pinCode, finalRole, departmentCode, deptName, customRoleName || finalRole,
+        canExportExcel, canViewDailyArchive, customRoleId, customRoleName,
+        homeDeptCode, homeSecCode || null, supervisedDepts || null, canReceiveCases, canCloseAssignedCases, id
+      ],
     });
   } else {
     await db.execute({
-      sql: `UPDATE users SET full_name = ?, role = ?, department_code = ?, department_name = ?, job_title = ?, can_export_excel = ?, can_view_daily_archive = ?, custom_role_id = ?, custom_role_name = ? WHERE id = ? AND is_protected = 0`,
-      args: [fullName, finalRole, departmentCode, deptName, customRoleName || finalRole, canExportExcel, canViewDailyArchive, customRoleId, customRoleName, id],
+      sql: `UPDATE users SET
+              full_name = ?, role = ?, department_code = ?, department_name = ?, job_title = ?,
+              can_export_excel = ?, can_view_daily_archive = ?, custom_role_id = ?, custom_role_name = ?,
+              home_department_code = ?, home_section_code = ?, supervised_departments = ?, can_receive_cases = ?, can_close_assigned_cases = ?
+            WHERE id = ? AND is_protected = 0`,
+      args: [
+        fullName, finalRole, departmentCode, deptName, customRoleName || finalRole,
+        canExportExcel, canViewDailyArchive, customRoleId, customRoleName,
+        homeDeptCode, homeSecCode || null, supervisedDepts || null, canReceiveCases, canCloseAssignedCases, id
+      ],
     });
   }
 
@@ -1899,6 +1988,7 @@ interface ScenarioStepData {
   execNotes: string;
   responseTime: string;
   adminDirectives: string;
+  photoAfter?: string;
 }
 
 /**
@@ -1932,7 +2022,7 @@ export async function exportCasesAuditTrailToExcelAction() {
       c.location_code, c.location_name, c.nc_code, c.nc_name,
       c.inspector_name, c.inspector_pin, c.description, c.root_cause, c.inspector_notes,
       c.status, c.current_round, c.assigned_roles, c.obs_date, c.obs_time,
-      c.created_at, c.closed_at, c.closed_feedback, c.in_progress_note
+      c.created_at, c.closed_at, c.closed_feedback, c.in_progress_note, c.photo_before
     FROM cases_master c
   `;
   const casesArgs: any[] = [];
@@ -2028,6 +2118,7 @@ export async function exportCasesAuditTrailToExcelAction() {
         execNotes: matchingExec?.notes || "-",
         responseTime: formatExcelDateTime(asg.completed_at || matchingExec?.created_at),
         adminDirectives,
+        photoAfter: matchingExec?.photo_after || "-",
       });
     }
 
@@ -2043,6 +2134,7 @@ export async function exportCasesAuditTrailToExcelAction() {
           execNotes: exec.notes || "-",
           responseTime: formatExcelDateTime(exec.created_at),
           adminDirectives: "-",
+          photoAfter: exec.photo_after || "-",
         });
       }
     }
@@ -2075,6 +2167,7 @@ export async function exportCasesAuditTrailToExcelAction() {
     { header: "الحالة العامة للبلاغ", key: "status_label", width: 140 },
     { header: "الجولة الحالية", key: "current_round", width: 90 },
     { header: "تاريخ ووقت تسجيل البلاغ", key: "created_at", width: 140 },
+    { header: "رابط صورة الحالة (قبل المعالجة)", key: "photo_before", width: 220 },
   ];
 
   // --- ثانياً: التمدد الأفقي المنظم للسيناريوهات والمراحل (1 إلى N) ---
@@ -2086,6 +2179,7 @@ export async function exportCasesAuditTrailToExcelAction() {
       { header: `(السيناريو ${i}) تفاصيل الإجراء الميداني المتخذ`, key: `s${i}_action`, width: 220 },
       { header: `(السيناريو ${i}) ملاحظات المنفذ الميداني`, key: `s${i}_notes`, width: 200 },
       { header: `(السيناريو ${i}) تاريخ ووقت الرد الميداني`, key: `s${i}_response_time`, width: 140 },
+      { header: `(السيناريو ${i}) رابط صورة الإجراء الميداني`, key: `s${i}_photo_after`, width: 200 },
       { header: `(السيناريو ${i}) التوجيهات والتنبيهات الإدارية`, key: `s${i}_directives`, width: 220 }
     );
   }
@@ -2118,6 +2212,7 @@ export async function exportCasesAuditTrailToExcelAction() {
       status_label: mapCaseStatusToArabic(c.status),
       current_round: Number(c.current_round || 1),
       created_at: formatExcelDateTime(c.created_at),
+      photo_before: c.photo_before || "-",
     };
 
     // Populate every scenario column (leave empty/dash if case hasn't reached this scenario)
@@ -2130,6 +2225,7 @@ export async function exportCasesAuditTrailToExcelAction() {
         rowObj[`s${i}_action`] = s.actionTaken;
         rowObj[`s${i}_notes`] = s.execNotes;
         rowObj[`s${i}_response_time`] = s.responseTime;
+        rowObj[`s${i}_photo_after`] = s.photoAfter || "-";
         rowObj[`s${i}_directives`] = s.adminDirectives;
       } else {
         rowObj[`s${i}_assignee`] = "-";
@@ -2138,6 +2234,7 @@ export async function exportCasesAuditTrailToExcelAction() {
         rowObj[`s${i}_action`] = "-";
         rowObj[`s${i}_notes`] = "-";
         rowObj[`s${i}_response_time`] = "-";
+        rowObj[`s${i}_photo_after`] = "-";
         rowObj[`s${i}_directives`] = "-";
       }
     }
