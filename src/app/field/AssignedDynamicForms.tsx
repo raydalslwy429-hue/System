@@ -20,6 +20,7 @@ import {
 } from "@/app/actions/dynamic-forms";
 import { FormResponse, FormTemplate } from "@/types/dynamic-forms";
 import DynamicFormRenderer from "@/components/DynamicFormRenderer";
+import { addToOfflineQueue } from "@/lib/offline-client";
 
 export default function AssignedDynamicForms({ canExecute }: { canExecute: boolean }) {
   const [responses, setResponses] = useState<FormResponse[]>([]);
@@ -63,6 +64,31 @@ export default function AssignedDynamicForms({ canExecute }: { canExecute: boole
     }
     setSubmittingId(responseId);
     setMessage(null);
+
+    const queueOfflineDynamicExec = () => {
+      addToOfflineQueue("DYNAMIC_FORM_EXECUTION", `معالجة استمارة #${responseId}`, {
+        responseId,
+        actionTaken: draft.action,
+        notes: draft.notes,
+      });
+      setResponses((current) => current.filter((response) => response.id !== responseId));
+      setDrafts((current) => {
+        const next = { ...current };
+        delete next[responseId];
+        return next;
+      });
+      setMessage({
+        type: "success",
+        text: "📶 تم حفظ المعالجة في صندوق الصادر (أوفلاين بدون نت) وستُرسل تلقائياً فور توفر الاتصال.",
+      });
+    };
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      queueOfflineDynamicExec();
+      setSubmittingId(null);
+      return;
+    }
+
     try {
       const result = await submitDynamicResponseExecutionAction({
         responseId,
@@ -78,10 +104,20 @@ export default function AssignedDynamicForms({ canExecute }: { canExecute: boole
         });
         setMessage({ type: "success", text: "تم إرسال المعالجة إلى الإدارة للمراجعة." });
       } else {
-        setMessage({ type: "error", text: result.error || "تعذر إرسال المعالجة." });
+        const errText = result.error || "";
+        if (
+          errText.includes("الاتصال") ||
+          errText.includes("network") ||
+          errText.includes("fetch") ||
+          errText.includes("fetch failed")
+        ) {
+          queueOfflineDynamicExec();
+        } else {
+          setMessage({ type: "error", text: errText || "تعذر إرسال المعالجة." });
+        }
       }
     } catch {
-      setMessage({ type: "error", text: "تعذر الاتصال لإرسال المعالجة." });
+      queueOfflineDynamicExec();
     } finally {
       setSubmittingId(null);
     }

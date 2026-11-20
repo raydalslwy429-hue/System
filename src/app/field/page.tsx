@@ -45,8 +45,10 @@ export default async function FieldDashboard() {
       c.obs_date,
       c.obs_time,
       c.status as case_status,
+      c.photo_before,
       e.action_taken,
-      e.notes as executor_notes
+      e.notes as executor_notes,
+      e.photo_after
     FROM case_assignments a
     JOIN cases_master c ON a.case_id = c.id
     LEFT JOIN case_executions e ON a.asg_id = e.assignment_id
@@ -84,6 +86,8 @@ export default async function FieldDashboard() {
     inProgressNote: r.in_progress_note ? String(r.in_progress_note) : undefined,
     actionTaken: r.action_taken ? String(r.action_taken) : undefined,
     executorNotes: r.executor_notes ? String(r.executor_notes) : undefined,
+    photoBefore: r.photo_before ? String(r.photo_before) : undefined,
+    photoAfter: r.photo_after ? String(r.photo_after) : undefined,
     obsDate: String(r.obs_date),
     obsTime: String(r.obs_time),
   }));
@@ -92,9 +96,9 @@ export default async function FieldDashboard() {
   const closedRows = userPermissions.features.field_feedback === "none" ? [] : (await db.execute({
     sql: `
       SELECT 
-        c.id, c.case_number, c.location_name, c.nc_name, c.description, c.root_cause, c.inspector_notes, c.closed_at, 
+        c.id, c.case_number, c.location_name, c.nc_name, c.description, c.root_cause, c.inspector_notes, c.closed_at, c.photo_before,
         COALESCE(c.closed_feedback, a.admin_feedback, 'تم الإغلاق والاعتماد') as closed_feedback,
-        e.action_taken, e.notes as executor_notes
+        e.action_taken, e.notes as executor_notes, e.photo_after
       FROM cases_master c
       JOIN case_assignments a ON c.id = a.case_id
       LEFT JOIN case_executions e ON a.asg_id = e.assignment_id
@@ -115,6 +119,8 @@ export default async function FieldDashboard() {
     inspectorNotes: String(r.inspector_notes || ""),
     actionTaken: r.action_taken ? String(r.action_taken) : undefined,
     executorNotes: r.executor_notes ? String(r.executor_notes) : undefined,
+    photoBefore: r.photo_before ? String(r.photo_before) : undefined,
+    photoAfter: r.photo_after ? String(r.photo_after) : undefined,
     closedAt: String(r.closed_at || ""),
     closedFeedback: String(r.closed_feedback || "تم الإغلاق والاعتماد"),
   }));

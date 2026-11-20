@@ -1,10 +1,22 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { FormTemplate } from "@/types/dynamic-forms";
 import DynamicFormRenderer from "@/components/DynamicFormRenderer";
 import InspectorForm from "./InspectorForm";
-import { Layers, Zap, Clock, ShieldCheck, FileText, CheckCircle2 } from "lucide-react";
+import {
+  Layers,
+  Zap,
+  Clock,
+  ShieldCheck,
+  FileText,
+  CheckCircle2,
+  RefreshCw,
+  Camera,
+  X,
+  ExternalLink,
+} from "lucide-react";
 
 interface InspectorClientProps {
   departments?: Array<{ code: string; name: string }>;
@@ -21,17 +33,26 @@ export default function InspectorClient({
   dynamicTemplates,
   recentCases,
 }: InspectorClientProps) {
+  const router = useRouter();
   const [activeFormMode, setActiveFormMode] = useState<"dynamic" | "classic">(
     dynamicTemplates.length > 0 ? "dynamic" : "classic"
   );
   const [selectedTemplateId, setSelectedTemplateId] = useState<number>(
     dynamicTemplates[0]?.id || 1
   );
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [viewingPhotoUrl, setViewingPhotoUrl] = useState<string | null>(null);
 
   const selectedTemplate =
     dynamicTemplates.find((t) => t.id === selectedTemplateId) || dynamicTemplates[0];
 
-  React.useEffect(() => {
+  const handleManualRefresh = () => {
+    setIsRefreshing(true);
+    router.refresh();
+    setTimeout(() => setIsRefreshing(false), 900);
+  };
+
+  useEffect(() => {
     const handleDrawerNavigate = (e: any) => {
       const key = e.detail?.key;
       if (!key) return;
@@ -44,9 +65,18 @@ export default function InspectorClient({
       }
     };
 
+    const handleAutoRefresh = () => {
+      router.refresh();
+    };
+
     window.addEventListener("marasim_drawer_navigate", handleDrawerNavigate);
-    return () => window.removeEventListener("marasim_drawer_navigate", handleDrawerNavigate);
-  }, []);
+    window.addEventListener("marasim_data_refreshed", handleAutoRefresh);
+
+    return () => {
+      window.removeEventListener("marasim_drawer_navigate", handleDrawerNavigate);
+      window.removeEventListener("marasim_data_refreshed", handleAutoRefresh);
+    };
+  }, [router]);
 
   const statusLabels: Record<string, { label: string; color: string }> = {
     pending_assignment: { label: "بانتظار فرز وتوجيه الإدارة", color: "bg-amber-100 text-amber-900 border-amber-300" },
@@ -57,6 +87,26 @@ export default function InspectorClient({
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      {/* Photo Viewer Modal */}
+      {viewingPhotoUrl && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="relative max-w-2xl w-full bg-[#1B1111] rounded-3xl p-4 border border-[#D49A3D]/40 shadow-2xl flex flex-col items-center">
+            <button
+              onClick={() => setViewingPhotoUrl(null)}
+              className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="text-amber-100 font-black text-sm mb-3">صورة حالة عدم المطابقة الميدانية</div>
+            <img
+              src={viewingPhotoUrl}
+              alt="صورة الحالة"
+              className="max-h-[75vh] w-auto max-w-full rounded-2xl object-contain border border-white/10"
+            />
+          </div>
+        </div>
+      )}
+
       {/* Left Column: Form Selector & Active Form */}
       <div className="lg:col-span-7 space-y-4">
         {/* Mode Selector Tab */}
@@ -146,13 +196,22 @@ export default function InspectorClient({
 
       {/* Right Column: Recent Log */}
       <div id="inspector-history" className="lg:col-span-5 bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-sm space-y-4 scroll-mt-24">
-        <h3 className="text-base font-black text-[#1B1111] pb-3 border-b border-slate-100 flex items-center justify-between">
-          <span className="flex items-center gap-2">
+        <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
+          <span className="flex items-center gap-2 text-base font-black text-[#1B1111]">
             <Clock className="w-5 h-5 text-[#D49A3D]" />
             <span>سجل البلاغات الأخيرة ({recentCases.length})</span>
           </span>
-          <span className="text-[10px] text-slate-400 font-semibold">ترقيم تسلسلي صريح</span>
-        </h3>
+          <button
+            type="button"
+            onClick={handleManualRefresh}
+            disabled={isRefreshing}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FAF7F4] hover:bg-[#F2ECE4] border border-[#D49A3D]/30 rounded-xl text-xs font-black text-[#1B1111] transition-all"
+            title="تحديث فوري للسجل"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-[#D49A3D] ${isRefreshing ? "animate-spin" : ""}`} />
+            <span>{isRefreshing ? "جارٍ التحديث..." : "تحديث سريع"}</span>
+          </button>
+        </div>
 
         {recentCases.length === 0 ? (
           <div className="text-center py-12 text-slate-400 text-xs font-bold">
@@ -178,6 +237,18 @@ export default function InspectorClient({
 
                   <h4 className="text-xs font-black text-slate-900">{c.nc_name}</h4>
                   <p className="text-[11px] text-slate-600 line-clamp-2">{c.description}</p>
+
+                  {/* Photo badge if photo exists */}
+                  {c.photo_before && (
+                    <button
+                      type="button"
+                      onClick={() => setViewingPhotoUrl(c.photo_before)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-[#D49A3D]/40 rounded-lg text-[10px] font-black text-[#1B1111] transition-colors"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-[#D49A3D]" />
+                      <span>عرض صورة الحالة المرفقة</span>
+                    </button>
+                  )}
 
                   <div className="flex items-center justify-between text-[10px] text-slate-400 font-semibold pt-1 border-t border-slate-200/60">
                     <span>{c.location_name}</span>

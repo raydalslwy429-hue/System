@@ -1,9 +1,25 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { createInspectionAction } from "@/app/actions/capa";
 import { addToOfflineQueue } from "@/lib/offline-client";
-import { Send, Loader2, CheckCircle2, AlertTriangle, Search, X, Check, Building2, MapPin, Tag, WifiOff } from "lucide-react";
+import { compressImageClient } from "@/lib/image-compression";
+import { uploadImageAction } from "@/app/actions/upload-blob";
+import {
+  Send,
+  Loader2,
+  CheckCircle2,
+  AlertTriangle,
+  Search,
+  X,
+  Building2,
+  MapPin,
+  Tag,
+  Camera,
+  Image as ImageIcon,
+  Trash2,
+  Sparkles,
+} from "lucide-react";
 
 interface DeptOption {
   code: string;
@@ -46,11 +62,16 @@ export default function InspectorForm({
   const [catSearchQuery, setCatSearchQuery] = useState("");
   const [isCatDropdownOpen, setIsCatDropdownOpen] = useState(false);
 
+  // Photo State
+  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
+  const [photoMeta, setPhotoMeta] = useState<{ sizeKb: number; width: number; height: number } | null>(null);
+  const [isCompressingPhoto, setIsCompressingPhoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Client UUID for Idempotency
   const [clientUuid, setClientUuid] = useState("");
 
   useEffect(() => {
-    // Generate unique UUID for this form instance
     if (typeof crypto !== "undefined" && crypto.randomUUID) {
       setClientUuid(crypto.randomUUID());
     } else {
@@ -101,13 +122,37 @@ export default function InspectorForm({
   const handleDeptChange = (deptCode: string) => {
     setSelectedDept(deptCode);
     setSelectedSection("");
-    // If selected category is no longer valid, reset it
     setSelectedCategoryCode("");
   };
 
   const handleSectionChange = (secCode: string) => {
     setSelectedSection(secCode);
     setSelectedCategoryCode("");
+  };
+
+  // Handle Photo selection & WebP compression
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsCompressingPhoto(true);
+      setErrorMsg(null);
+      const res = await compressImageClient(file, 1200, 0.78);
+      setPhotoBase64(res.base64);
+      setPhotoMeta({ sizeKb: res.sizeKb, width: res.width, height: res.height });
+    } catch (err: any) {
+      setErrorMsg(err.message || "فشل معالجة وضغط الصورة");
+    } finally {
+      setIsCompressingPhoto(false);
+      // Reset input value so same photo can be re-selected if needed
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const removePhoto = () => {
+    setPhotoBase64(null);
+    setPhotoMeta(null);
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -126,55 +171,94 @@ export default function InspectorForm({
     setSuccessMsg(null);
 
     const formData = new FormData(e.currentTarget);
-    formData.set("location_code", selectedSection);
-    formData.set("nc_code", selectedCategoryCode);
-    formData.set("client_uuid", clientUuid);
-
+    const description = String(formData.get("description") || "").trim();
+    const rootCause = String(formData.get("root_cause") || "").trim();
+    const inspectorNotes = String(formData.get("inspector_notes") || "").trim();
     const formElement = e.currentTarget;
+
+    const resetFormState = () => {
+      formElement.reset();
+      setSelectedDept("");
+      setSelectedSection("");
+      setSelectedCategoryCode("");
+      setCatSearchQuery("");
+      setPhotoBase64(null);
+      setPhotoMeta(null);
+      setClientUuid(`insp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
+    };
 
     const queueOfflineCase = () => {
       const payload: any = {
         client_uuid: clientUuid,
         location_code: selectedSection,
         nc_code: selectedCategoryCode,
-        description: String(formData.get("description") || "").trim(),
-        root_cause: String(formData.get("root_cause") || "").trim(),
-        inspector_notes: String(formData.get("inspector_notes") || "").trim(),
+        description,
+        root_cause: rootCause,
+        inspector_notes: inspectorNotes,
+        photo_before: photoBase64 || null,
       };
 
       const caseTitle = selectedCategoryObj?.name || selectedCategoryCode;
       addToOfflineQueue("INSPECTION", `رصد حالة: ${caseTitle}`, payload);
 
-      setSuccessMsg("📶 تم حفظ حالة عدم المطابقة محلياً في صندوق الصادر (أوفلاين بدون نت) وسيتم ترحيلها تلقائياً عند توفر الاتصال!");
-      formElement.reset();
-      setSelectedDept("");
-      setSelectedSection("");
-      setSelectedCategoryCode("");
-      setCatSearchQuery("");
-      setClientUuid(`insp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
+      setSuccessMsg("📶 تم حفظ حالة عدم المطابقة والصورة في صندوق الصادر (أوفلاين بدون نت) وسيتم ترحيلها تلقائياً للسيرفر فور توفر الاتصال!");
+      resetFormState();
     };
 
+    // If client is completely offline, skip fetch and queue to IndexedDB directly
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      queueOfflineCase();
+      setLoading(false);
+      return;
+    }
+
     try {
-      const res = await createInspectionAction(formData);
+      let finalPhotoUrl = photoBase64;
+
+      // If photo exists, upload to Vercel Blob (or fallback to inline WebP)
+      if (photoBase64) {
+        try {
+          const uploadRes = await uploadImageAction(photoBase64, "insp_before");
+          if (uploadRes.success && uploadRes.url) {
+            finalPhotoUrl = uploadRes.url;
+          }
+        } catch (upErr) {
+          console.warn("Vercel Blob upload failed, fallback to WebP string:", upErr);
+        }
+      }
+
+      // Build payload for server action
+      const serverPayload = {
+        client_uuid: clientUuid,
+        location_code: selectedSection,
+        nc_code: selectedCategoryCode,
+        description,
+        root_cause: rootCause,
+        inspector_notes: inspectorNotes,
+        photo_before: finalPhotoUrl || "",
+      };
+
+      const res = await createInspectionAction(serverPayload);
+
       if (res.success) {
         setSuccessMsg(`🎉 تم حفظ حالة عدم المطابقة برقم (#${res.caseNumber}) بنجاح وترحيلها لحظياً للإدارة!`);
-        formElement.reset();
-        setSelectedDept("");
-        setSelectedSection("");
-        setSelectedCategoryCode("");
-        setCatSearchQuery("");
-        setClientUuid(`insp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
+        resetFormState();
       } else {
         const errText = res.error || "";
-        // Network / Turso reachability failure fallback
-        if (errText.includes("الاتصال") || errText.includes("سحابية") || errText.includes("network") || errText.includes("fetch") || errText.includes("fetch failed")) {
+        if (
+          errText.includes("الاتصال") ||
+          errText.includes("سحابية") ||
+          errText.includes("network") ||
+          errText.includes("fetch") ||
+          errText.includes("fetch failed")
+        ) {
           queueOfflineCase();
         } else {
           setErrorMsg(errText || "حدث خطأ أثناء التسجيل");
         }
       }
     } catch {
-      // In catch block (connection dropped or timeout): fallback to offline queue automatically!
+      // In catch block (connection dropped or timeout): fallback to offline IndexedDB outbox
       queueOfflineCase();
     } finally {
       setLoading(false);
@@ -195,18 +279,18 @@ export default function InspectorForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <input type="hidden" name="client_uuid" value={clientUuid} />
-      
+
       {successMsg && (
-        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-black rounded-2xl flex items-center gap-2">
-          <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-emerald-600" />
-          <span>{successMsg}</span>
+        <div className="p-4 bg-emerald-50 border-2 border-emerald-300 text-emerald-950 text-xs font-black rounded-2xl flex items-start gap-2.5 shadow-sm animate-in fade-in">
+          <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-emerald-600 mt-0.5" />
+          <div className="leading-relaxed">{successMsg}</div>
         </div>
       )}
 
       {errorMsg && (
-        <div className="p-3.5 bg-[#FAF3F3] border border-[#682722]/30 text-[#682722] text-xs font-black rounded-2xl flex items-center gap-2">
-          <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-          <span>{errorMsg}</span>
+        <div className="p-4 bg-[#FAF3F3] border-2 border-[#682722]/40 text-[#682722] text-xs font-black rounded-2xl flex items-start gap-2.5 shadow-sm animate-in fade-in">
+          <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <div className="leading-relaxed">{errorMsg}</div>
         </div>
       )}
 
@@ -220,7 +304,7 @@ export default function InspectorForm({
         <select
           value={selectedDept}
           onChange={(e) => handleDeptChange(e.target.value)}
-          className="w-full h-11 px-3 bg-[#FAF7F4] border border-[#D49A3D]/40 rounded-xl text-xs font-bold focus:ring-2 focus:ring-[#D49A3D]/30 focus:border-[#D49A3D] focus:outline-none"
+          className="w-full h-11 px-3 bg-[#FAF7F4] border border-[#D49A3D]/40 rounded-xl text-xs font-bold focus:ring-2 focus:ring-[#D49A3D]/30 focus:border-[#D49A3D] focus:outline-none transition-all"
         >
           <option value="">-- جميع الإدارات --</option>
           {departments.map((dept) => (
@@ -242,7 +326,7 @@ export default function InspectorForm({
           value={selectedSection}
           onChange={(e) => handleSectionChange(e.target.value)}
           required
-          className="w-full h-11 px-3 bg-[#FAF7F4] border border-[#D49A3D]/40 rounded-xl text-xs font-bold focus:ring-2 focus:ring-[#D49A3D]/30 focus:border-[#D49A3D] focus:outline-none"
+          className="w-full h-11 px-3 bg-[#FAF7F4] border border-[#D49A3D]/40 rounded-xl text-xs font-bold focus:ring-2 focus:ring-[#D49A3D]/30 focus:border-[#D49A3D] focus:outline-none transition-all"
         >
           <option value="">-- اختر القسم التشغيلي --</option>
           {filteredSections.map((loc) => (
@@ -362,6 +446,82 @@ export default function InspectorForm({
         />
       </div>
 
+      {/* Photo Capture & Compression Component */}
+      <div className="bg-[#FAF7F4] p-3.5 rounded-2xl border border-[#D49A3D]/30 space-y-2.5">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-black text-[#1B1111] flex items-center gap-1.5">
+            <Camera className="w-4 h-4 text-[#D49A3D]" />
+            <span>📷 صورة إثبات الحالة الميدانية (قبل المعالجة)</span>
+            <span className="text-[10px] text-slate-400 font-normal">(اختياري - ضغط تلقائي WebP)</span>
+          </label>
+          {photoMeta && (
+            <span className="text-[10px] font-mono font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded-md">
+              {photoMeta.sizeKb} KB (WebP)
+            </span>
+          )}
+        </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handlePhotoSelect}
+          className="hidden"
+          id="inspector-photo-input"
+        />
+
+        {photoBase64 ? (
+          <div className="relative rounded-xl overflow-hidden border-2 border-[#D49A3D] bg-white p-2 flex items-center gap-3">
+            <img
+              src={photoBase64}
+              alt="معاينة صورة الحالة"
+              className="w-16 h-16 object-cover rounded-lg border border-slate-200 flex-shrink-0"
+            />
+            <div className="flex-1 min-w-0 text-[11px]">
+              <div className="font-black text-slate-800 flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>تم تجهيز الصورة بنجاح</span>
+              </div>
+              <div className="text-slate-500 font-mono text-[10px]">
+                الأبعاد: {photoMeta?.width}x{photoMeta?.height} بكسل
+              </div>
+              <div className="text-emerald-700 font-bold text-[10px] mt-0.5 flex items-center gap-1">
+                <Sparkles className="w-3 h-3" />
+                <span>مضغوطة وجاهزة للرفع والحفظ</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={removePhoto}
+              className="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
+              title="حذف الصورة"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={isCompressingPhoto}
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full py-3 px-4 border-2 border-dashed border-[#D49A3D]/50 hover:border-[#D49A3D] bg-white rounded-xl text-xs font-bold text-slate-700 hover:text-[#1B1111] transition-all flex items-center justify-center gap-2 group"
+          >
+            {isCompressingPhoto ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-[#D49A3D]" />
+                <span>جارٍ معالجة وضغط الصورة إلى WebP...</span>
+              </>
+            ) : (
+              <>
+                <Camera className="w-4 h-4 text-[#D49A3D] group-hover:scale-110 transition-transform" />
+                <span>التقاط صورة بالكاميرا أو اختيار من المعرض</span>
+              </>
+            )}
+          </button>
+        )}
+      </div>
+
       {/* Inspector Notes */}
       <div>
         <label className="block text-xs font-black text-[#1B1111] mb-1.5">
@@ -378,13 +538,13 @@ export default function InspectorForm({
       {/* Submit Button */}
       <button
         type="submit"
-        disabled={loading}
-        className="w-full h-12 bg-gradient-to-r from-[#D49A3D] via-[#E5A93C] to-[#B87B28] hover:opacity-95 disabled:bg-slate-300 text-[#1B1111] font-black rounded-xl shadow-md shadow-[#D49A3D]/30 transition-all flex items-center justify-center gap-2"
+        disabled={loading || isCompressingPhoto}
+        className="w-full h-12 bg-gradient-to-r from-[#D49A3D] via-[#E5A93C] to-[#B87B28] hover:opacity-95 disabled:bg-slate-300 disabled:opacity-60 disabled:cursor-not-allowed text-[#1B1111] font-black rounded-xl shadow-md shadow-[#D49A3D]/30 transition-all flex items-center justify-center gap-2"
       >
         {loading ? (
           <>
             <Loader2 className="w-5 h-5 animate-spin" />
-            <span>جارٍ الحفظ والترحيل للإدارة...</span>
+            <span>جارٍ الإرسال والتأكيد لحظياً...</span>
           </>
         ) : (
           <>
@@ -393,7 +553,6 @@ export default function InspectorForm({
           </>
         )}
       </button>
-
     </form>
   );
 }

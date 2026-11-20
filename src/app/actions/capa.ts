@@ -190,6 +190,7 @@ export async function createInspectionAction(formDataOrPlain: FormData | any) {
   const description = getVal("description");
   const rootCause = getVal("root_cause");
   const inspectorNotes = getVal("inspector_notes");
+  const photoBefore = getVal("photo_before");
 
   if (!locationCode || !ncCode || !description) {
     return { success: false, error: "يرجى ملء الحقول الإلزامية (الموقع، نوع حالة عدم المطابقة، الوصف)" };
@@ -230,8 +231,8 @@ export async function createInspectionAction(formDataOrPlain: FormData | any) {
     sql: `INSERT INTO cases_master (
       case_number, internal_id, department_code, department_name, location_code, location_name, nc_code, nc_name,
       inspector_name, inspector_pin, description, root_cause, inspector_notes,
-      status, current_round, obs_date, obs_time, client_uuid
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_assignment', 1, ?, ?, ?)`,
+      status, current_round, obs_date, obs_time, client_uuid, photo_before
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_assignment', 1, ?, ?, ?, ?)`,
     args: [
       caseNumber,
       internalId,
@@ -249,6 +250,7 @@ export async function createInspectionAction(formDataOrPlain: FormData | any) {
       obsDate,
       obsTime,
       clientUuid || null,
+      photoBefore || null,
     ],
   });
 
@@ -567,7 +569,13 @@ export async function addInProgressNoteAction(caseId: number, note: string) {
 // 🛠️ FIELD AGENT ACTIONS
 // ==========================================
 
-export async function submitExecutionAction(caseId: number, asgId: string, actionTaken: string, notes?: string) {
+export async function submitExecutionAction(
+  caseId: number,
+  asgId: string,
+  actionTaken: string,
+  notes?: string,
+  photoAfter?: string
+) {
   const session = await getSession();
   if (!session || !(await hasFeaturePermission(session, "field_execute"))) {
     return { success: false, error: "صلاحية التنفيذ الميداني محصورة بالمنفذين المكلفين" };
@@ -594,8 +602,8 @@ export async function submitExecutionAction(caseId: number, asgId: string, actio
   // Insert execution
   await db.execute({
     sql: `INSERT OR REPLACE INTO case_executions (
-      exec_id, case_id, case_number, assignment_id, round, executor_name, executor_role, role_code, action_taken, notes
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      exec_id, case_id, case_number, assignment_id, round, executor_name, executor_role, role_code, action_taken, notes, photo_after
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       execId,
       caseId,
@@ -607,6 +615,7 @@ export async function submitExecutionAction(caseId: number, asgId: string, actio
       session.department_code || "dept",
       actionTaken.trim(),
       notes?.trim() || null,
+      photoAfter?.trim() || null,
     ],
   });
 

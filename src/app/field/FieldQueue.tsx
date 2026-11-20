@@ -1,7 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { submitExecutionAction } from "@/app/actions/capa";
+import { addToOfflineQueue } from "@/lib/offline-client";
+import { compressImageClient } from "@/lib/image-compression";
+import { uploadImageAction } from "@/app/actions/upload-blob";
 import AssignedDynamicForms from "./AssignedDynamicForms";
 import {
   Inbox,
@@ -17,6 +21,11 @@ import {
   ShieldAlert,
   Sparkles,
   Bell,
+  RefreshCw,
+  Camera,
+  X,
+  Trash2,
+  ExternalLink,
 } from "lucide-react";
 
 interface AssignmentItem {
@@ -41,6 +50,8 @@ interface AssignmentItem {
   inProgressNote?: string;
   actionTaken?: string;
   executorNotes?: string;
+  photoBefore?: string;
+  photoAfter?: string;
   obsDate: string;
   obsTime: string;
 }
@@ -55,6 +66,8 @@ interface ClosedCaseItem {
   inspectorNotes?: string;
   actionTaken?: string;
   executorNotes?: string;
+  photoBefore?: string;
+  photoAfter?: string;
   closedAt: string;
   closedFeedback: string;
 }
@@ -70,15 +83,26 @@ export default function FieldQueue({
   closedCases?: ClosedCaseItem[];
   canExecute?: boolean;
 }) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<"new" | "returned" | "submitted" | "closed" | "dynamic">(
     returnedAssignments.length > 0 ? "returned" : newAssignments.length > 0 ? "new" : "closed"
   );
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [formDataState, setFormDataState] = useState<Record<string, { action: string; notes: string }>>({});
+  const [photosState, setPhotosState] = useState<Record<string, { base64: string; sizeKb: number; width: number; height: number }>>({});
+  const [compressingAsgId, setCompressingAsgId] = useState<string | null>(null);
+  const [viewingPhotoUrl, setViewingPhotoUrl] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [errorToast, setErrorToast] = useState<string | null>(null);
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  // Listen to drawer navigation events
+  const handleManualRefresh = () => {
+    setIsRefreshing(true);
+    router.refresh();
+    setTimeout(() => setIsRefreshing(false), 900);
+  };
+
   useEffect(() => {
     const handleDrawerNavigate = (e: any) => {
       const key = e.detail?.key;
@@ -88,13 +112,24 @@ export default function FieldQueue({
       else if (key === "tasks_closed") setActiveTab("closed");
       else if (key === "dynamic_field") setActiveTab("dynamic");
     };
-    window.addEventListener("marasim_drawer_navigate", handleDrawerNavigate);
-    return () => window.removeEventListener("marasim_drawer_navigate", handleDrawerNavigate);
-  }, []);
 
-  const currentList = activeTab === "new"
-    ? newAssignments
-    : activeTab === "returned"
+    const handleAutoRefresh = () => {
+      router.refresh();
+    };
+
+    window.addEventListener("marasim_drawer_navigate", handleDrawerNavigate);
+    window.addEventListener("marasim_data_refreshed", handleAutoRefresh);
+
+    return () => {
+      window.removeEventListener("marasim_drawer_navigate", handleDrawerNavigate);
+      window.removeEventListener("marasim_data_refreshed", handleAutoRefresh);
+    };
+  }, [router]);
+
+  const currentList =
+    activeTab === "new"
+      ? newAssignments
+      : activeTab === "returned"
       ? returnedAssignments
       : [...newAssignments, ...returnedAssignments].filter((assignment) => assignment.asgStatus === "completed");
 
@@ -108,6 +143,41 @@ export default function FieldQueue({
     }));
   };
 
+  const handlePhotoSelect = async (asgId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setCompressingAsgId(asgId);
+      setErrorToast(null);
+      const res = await compressImageClient(file, 1200, 0.78);
+      setPhotosState((prev) => ({
+        ...prev,
+        [asgId]: {
+          base64: res.base64,
+          sizeKb: res.sizeKb,
+          width: res.width,
+          height: res.height,
+        },
+      }));
+    } catch (err: any) {
+      setErrorToast(err.message || "فشل ضغط صورة المعالجة الميدانية");
+    } finally {
+      setCompressingAsgId(null);
+      if (fileInputRefs.current[asgId]) {
+        fileInputRefs.current[asgId]!.value = "";
+      }
+    }
+  };
+
+  const removePhoto = (asgId: string) => {
+    setPhotosState((prev) => {
+      const next = { ...prev };
+      delete next[asgId];
+      return next;
+    });
+  };
+
   const handleExecute = async (asg: AssignmentItem) => {
     const data = formDataState[asg.asgId];
     if (!data?.action || data.action.trim() === "") {
@@ -118,16 +188,92 @@ export default function FieldQueue({
     setSubmittingId(asg.asgId);
     setErrorToast(null);
 
+    const actionText = data.action.trim();
+    const notesText = data.notes?.trim() || "";
+    const photoObj = photosState[asg.asgId];
+
+    const resetItemState = () => {
+      setFormDataState((prev) => {
+        const next = { ...prev };
+        delete next[asg.asgId];
+        return next;
+      });
+      removePhoto(asg.asgId);
+    };
+
+    const queueOfflineExecution = () => {
+      addToOfflineQueue(
+        "EXECUTION",
+        `إجراء تصحيحي لبلاغ #${asg.caseNumber}`,
+        {
+          caseId: asg.caseId,
+          asgId: asg.asgId,
+          actionTaken: actionText,
+          notes: notesText,
+          photo_after: photoObj?.base64 || null,
+        }
+      );
+
+      setSuccessToast(
+        `📶 تم حفظ الإجراء التصحيحي للبلاغ (#${asg.caseNumber}) في صندوق الصادر (أوفلاين بدون نت) وسيتم ترحيله تلقائياً للسيرفر فور توفر الاتصال!`
+      );
+      resetItemState();
+      setTimeout(() => setSuccessToast(null), 6000);
+    };
+
+    // If device is strictly offline, immediately queue to IndexedDB Outbox
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      queueOfflineExecution();
+      setSubmittingId(null);
+      return;
+    }
+
     try {
-      const res = await submitExecutionAction(asg.caseId, asg.asgId, data.action, data.notes);
+      let finalPhotoUrl = photoObj?.base64 || undefined;
+
+      // Upload photo to Vercel Blob if available
+      if (photoObj?.base64) {
+        try {
+          const uploadRes = await uploadImageAction(photoObj.base64, "exec_after");
+          if (uploadRes.success && uploadRes.url) {
+            finalPhotoUrl = uploadRes.url;
+          }
+        } catch (upErr) {
+          console.warn("Vercel Blob upload failed, fallback to WebP string:", upErr);
+        }
+      }
+
+      const res = await submitExecutionAction(
+        asg.caseId,
+        asg.asgId,
+        actionText,
+        notesText,
+        finalPhotoUrl
+      );
+
       if (res.success) {
-        setSuccessToast(`🎉 تم إرسال الإجراء التصحيحي للبلاغ رقم (#${asg.caseNumber}) بنجاح وهو الآن قيد مراجعة واعتماد الإدارة.`);
+        setSuccessToast(
+          `🎉 تم إرسال الإجراء التصحيحي للبلاغ رقم (#${asg.caseNumber}) بنجاح وهو الآن قيد مراجعة واعتماد الإدارة.`
+        );
+        resetItemState();
         setTimeout(() => setSuccessToast(null), 5000);
       } else {
-        setErrorToast(res.error || "فشل إرسال الإجراء");
+        const errText = res.error || "";
+        if (
+          errText.includes("الاتصال") ||
+          errText.includes("سحابية") ||
+          errText.includes("network") ||
+          errText.includes("fetch") ||
+          errText.includes("fetch failed")
+        ) {
+          queueOfflineExecution();
+        } else {
+          setErrorToast(errText || "فشل إرسال الإجراء");
+        }
       }
     } catch {
-      setErrorToast("حدث خطأ في الاتصال بالخادم");
+      // In catch block (connection dropped or timeout): fallback to IndexedDB outbox
+      queueOfflineExecution();
     } finally {
       setSubmittingId(null);
     }
@@ -135,6 +281,26 @@ export default function FieldQueue({
 
   return (
     <div>
+      {/* Photo Viewer Modal */}
+      {viewingPhotoUrl && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="relative max-w-2xl w-full bg-[#1B1111] rounded-3xl p-4 border border-[#D49A3D]/40 shadow-2xl flex flex-col items-center">
+            <button
+              onClick={() => setViewingPhotoUrl(null)}
+              className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="text-amber-100 font-black text-sm mb-3">صورة التوثيق الميدانية</div>
+            <img
+              src={viewingPhotoUrl}
+              alt="صورة الحالة"
+              className="max-h-[75vh] w-auto max-w-full rounded-2xl object-contain border border-white/10"
+            />
+          </div>
+        </div>
+      )}
+
       {/* Success / Error Toasts */}
       {successToast && (
         <div className="mb-4 p-4 bg-emerald-600 text-white font-black text-xs rounded-2xl shadow-lg flex items-center justify-between animate-in fade-in">
@@ -156,70 +322,84 @@ export default function FieldQueue({
         </div>
       )}
 
-      {/* Tabs Switcher styled with Al-Marasim palette */}
-      <div className="flex items-center gap-2 p-1.5 bg-[#EFE8E1] rounded-2xl mb-6 w-full sm:w-auto sm:inline-flex border border-[#D49A3D]/20">
-        <button
-          onClick={() => setActiveTab("new")}
-          className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${
-            activeTab === "new"
-              ? "bg-[#1B1111] text-[#FFC217] shadow-md"
-              : "text-[#1B1111]/70 hover:text-[#1B1111] hover:bg-white/50"
-          }`}
-        >
-          <Inbox className="w-4 h-4 text-[#D49A3D]" />
-          <span>📥 معالجة بلاغات جديدة</span>
-          <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-500/20 text-[#1B1111] font-black border border-[#D49A3D]/40">
-            {newAssignments.length}
-          </span>
-        </button>
+      {/* Toolbar & Tabs Switcher */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div className="flex flex-wrap items-center gap-2 p-1.5 bg-[#EFE8E1] rounded-2xl border border-[#D49A3D]/20 w-full lg:w-auto">
+          <button
+            onClick={() => setActiveTab("new")}
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${
+              activeTab === "new"
+                ? "bg-[#1B1111] text-[#FFC217] shadow-md"
+                : "text-[#1B1111]/70 hover:text-[#1B1111] hover:bg-white/50"
+            }`}
+          >
+            <Inbox className="w-4 h-4 text-[#D49A3D]" />
+            <span>📥 معالجة بلاغات جديدة</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-500/20 text-[#1B1111] font-black border border-[#D49A3D]/40">
+              {newAssignments.length}
+            </span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab("submitted")}
-          className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${
-            activeTab === "submitted"
-              ? "bg-blue-700 text-white shadow-md"
-              : "text-blue-800 hover:bg-blue-50"
-          }`}
-        >
-          <Clock className="w-4 h-4 text-blue-400" />
-          <span>⏳ بانتظار مراجعة الإدارة</span>
-          <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-100 text-blue-900 font-black border border-blue-200">
-            {[...newAssignments, ...returnedAssignments].filter((assignment) => assignment.asgStatus === "completed").length}
-          </span>
-        </button>
+          <button
+            onClick={() => setActiveTab("submitted")}
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${
+              activeTab === "submitted"
+                ? "bg-blue-700 text-white shadow-md"
+                : "text-blue-800 hover:bg-blue-50"
+            }`}
+          >
+            <Clock className="w-4 h-4 text-blue-400" />
+            <span>⏳ بانتظار مراجعة الإدارة</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-100 text-blue-900 font-black border border-blue-200">
+              {[...newAssignments, ...returnedAssignments].filter((assignment) => assignment.asgStatus === "completed").length}
+            </span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab("returned")}
-          className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${
-            activeTab === "returned"
-              ? "bg-[#682722] text-white shadow-md shadow-[#682722]/30"
-              : "text-[#682722] hover:bg-[#682722]/10"
-          }`}
-        >
-          <RotateCcw className="w-4 h-4 text-amber-300" />
-          <span>🔄 معالجة بلاغات معادة للاستكمال</span>
-          <span className="px-2 py-0.5 rounded-full text-[10px] bg-white text-[#682722] font-black">
-            {returnedAssignments.length}
-          </span>
-        </button>
+          <button
+            onClick={() => setActiveTab("returned")}
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${
+              activeTab === "returned"
+                ? "bg-[#682722] text-white shadow-md shadow-[#682722]/30"
+                : "text-[#682722] hover:bg-[#682722]/10"
+            }`}
+          >
+            <RotateCcw className="w-4 h-4 text-amber-300" />
+            <span>🔄 معالجة بلاغات معادة</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] bg-white text-[#682722] font-black">
+              {returnedAssignments.length}
+            </span>
+          </button>
 
+          <button
+            onClick={() => setActiveTab("closed")}
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${
+              activeTab === "closed"
+                ? "bg-emerald-800 text-white shadow-md shadow-emerald-900/30"
+                : "text-emerald-800 hover:bg-emerald-50"
+            }`}
+          >
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <span>✅ معتمدة ومغلقة</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-900 font-black border border-emerald-300">
+              {closedCases.length}
+            </span>
+          </button>
+        </div>
+
+        {/* Quick Refresh Button */}
         <button
-          onClick={() => setActiveTab("closed")}
-          className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${
-            activeTab === "closed"
-              ? "bg-emerald-800 text-white shadow-md shadow-emerald-900/30"
-              : "text-emerald-800 hover:bg-emerald-50"
-          }`}
+          type="button"
+          onClick={handleManualRefresh}
+          disabled={isRefreshing}
+          className="flex items-center gap-1.5 px-3.5 py-2.5 bg-white hover:bg-[#FAF7F4] border border-[#D49A3D]/40 rounded-2xl text-xs font-black text-[#1B1111] shadow-xs transition-all"
+          title="تحديث فوري لقائمة المهام"
         >
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          <span>✅ معتمدة ومغلقة (التغذية الراجعة)</span>
-          <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-900 font-black border border-emerald-300">
-            {closedCases.length}
-          </span>
+          <RefreshCw className={`w-4 h-4 text-[#D49A3D] ${isRefreshing ? "animate-spin" : ""}`} />
+          <span>{isRefreshing ? "جارٍ التحديث..." : "تحديث سريع"}</span>
         </button>
       </div>
 
-      {/* Closed Cases View with Feedback */}
+      {/* Dynamic Forms View */}
       {activeTab === "dynamic" ? (
         <AssignedDynamicForms canExecute={canExecute} />
       ) : activeTab === "closed" ? (
@@ -227,7 +407,7 @@ export default function FieldQueue({
           <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm">
             <CheckCircle2 className="w-12 h-12 text-slate-300 mx-auto mb-2" />
             <h3 className="text-base font-black text-slate-700">لا توجد حالات مغلقة في سجلك حتى الآن</h3>
-            <p className="text-xs text-slate-400">عند اعتماد الإدارة لإجراءاتك وإغلاق الحالات، ستظهر توجيهات الإدارة هنا كمرجع دائم.</p>
+            <p className="text-xs text-slate-400 mt-1">عند اعتماد الإدارة لإجراءاتك وإغلاق الحالات، ستظهر توجيهات الإدارة هنا كمرجع دائم.</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -238,115 +418,89 @@ export default function FieldQueue({
                     <span className="px-3 py-1 bg-emerald-100 text-emerald-900 font-black text-xs rounded-xl border border-emerald-300">
                       حالة مغلقة ومعتمدة #{c.caseNumber}
                     </span>
-                    <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-[#D49A3D]" />
-                      {c.locationName}
-                    </span>
+                    <span className="text-xs font-bold text-slate-500">{c.locationName}</span>
                   </div>
-                  {c.closedAt && (
-                    <span className="text-xs font-mono font-bold text-slate-400 flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5" />
-                      تاريخ الإغلاق: {c.closedAt}
-                    </span>
+                  <span className="text-[11px] font-mono text-slate-400">{c.closedAt}</span>
+                </div>
+
+                <div className="text-xs space-y-2">
+                  <div className="font-black text-slate-800">{c.ncName}</div>
+                  <div className="text-slate-600 leading-relaxed">{c.description}</div>
+                </div>
+
+                {/* Photos Comparison in Closed View */}
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {c.photoBefore && (
+                    <button
+                      type="button"
+                      onClick={() => setViewingPhotoUrl(c.photoBefore || null)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-[#D49A3D]/40 rounded-lg text-[10px] font-black text-[#1B1111]"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-[#D49A3D]" />
+                      <span>صورة الحالة قبل المعالجة</span>
+                    </button>
+                  )}
+                  {c.photoAfter && (
+                    <button
+                      type="button"
+                      onClick={() => setViewingPhotoUrl(c.photoAfter || null)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg text-[10px] font-black text-emerald-900"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>صورة الحالة بعد المعالجة</span>
+                    </button>
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <h4 className="font-black text-sm text-[#1B1111]">{c.ncName}</h4>
-                  <div className="text-xs text-slate-600 font-medium leading-relaxed bg-[#FAF7F4] p-3 rounded-2xl border border-slate-100 space-y-1.5">
-                    <div>
-                      <strong className="text-[#1B1111] font-black">الوصف: </strong>
-                      {c.description}
-                    </div>
-                    {c.rootCause && (
-                      <div>
-                        <strong className="text-[#682722] font-black">السبب المرصود: </strong>
-                        {c.rootCause}
-                      </div>
-                    )}
-                    {c.inspectorNotes && (
-                      <div>
-                        <strong className="text-blue-900 font-black">ملاحظات وتوصيات المفتش: </strong>
-                        {c.inspectorNotes}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Executor Field Response & Notes */}
-                {(c.actionTaken || c.executorNotes) && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    {c.actionTaken && (
-                      <div className="bg-[#FAF7F4] p-3 rounded-2xl border border-slate-200">
-                        <span className="font-bold text-slate-500 block mb-0.5 text-[11px]">🛠️ الإجراء الذي قمت بتنفيذه:</span>
-                        <p className="text-slate-800 font-bold">{c.actionTaken}</p>
-                      </div>
-                    )}
-                    {c.executorNotes && (
-                      <div className="bg-blue-50/70 p-3 rounded-2xl border border-blue-200">
-                        <span className="font-bold text-blue-900 block mb-0.5 text-[11px]">💬 ملاحظاتك التي أرفقتها:</span>
-                        <p className="text-blue-950 font-bold">{c.executorNotes}</p>
-                      </div>
-                    )}
+                {c.actionTaken && (
+                  <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200 text-xs">
+                    <span className="font-bold text-emerald-900 block mb-0.5">الإجراء التصحيحي المنفذ:</span>
+                    <p className="font-black text-emerald-950">{c.actionTaken}</p>
                   </div>
                 )}
 
-                {/* Permanent Administrative Feedback Box (Read-Only) */}
-                <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 rounded-2xl border-2 border-emerald-400 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-emerald-950 font-black text-xs">
-                      <Sparkles className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                      <span>💡 التوجيه والملاحظات الإدارية الدائمة (تغذية راجعة):</span>
-                    </div>
-                    <span className="text-[10px] bg-emerald-200 text-emerald-900 font-black px-2 py-0.5 rounded-lg border border-emerald-300">
-                      🔒 للقراءة فقط
-                    </span>
-                  </div>
-                  <p className="text-xs text-emerald-950 font-bold leading-relaxed bg-white/80 p-3 rounded-xl border border-emerald-200">
-                    {c.closedFeedback}
-                  </p>
+                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-300 text-xs text-emerald-950 font-bold">
+                  <span className="text-emerald-800 font-black block mb-0.5">توجيه واعتماد الإدارة النهائي:</span>
+                  {c.closedFeedback}
                 </div>
               </div>
             ))}
           </div>
         )
       ) : currentList.length === 0 ? (
-        <div className="bg-white p-12 rounded-[2rem] border border-[#D49A3D]/30 text-center shadow-sm">
-          <div className="w-16 h-16 rounded-2xl bg-amber-50 text-[#D49A3D] flex items-center justify-center mx-auto mb-3">
-            <CheckCircle2 className="w-8 h-8" />
-          </div>
-          <h3 className="text-base font-black text-[#1B1111] mb-1">
+        <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm">
+          <Sparkles className="w-12 h-12 text-[#D49A3D] mx-auto mb-2" />
+          <h3 className="text-base font-black text-[#1B1111]">
             {activeTab === "new"
-              ? "لا توجد بلاغات جديدة بانتظار التنفيذ!"
-              : activeTab === "returned"
-                ? "لا توجد بلاغات معادة للاستكمال!"
-                : "لا توجد بلاغات مرسلة بانتظار مراجعة الإدارة!"}
+              ? "رائع! لا توجد بلاغات جديدة بانتظار الإجراء حالياً"
+              : activeTab === "submitted"
+              ? "لا توجد بلاغات بانتظار مراجعة الإدارة حالياً"
+              : "لا توجد بلاغات معادة للاستكمال"}
           </h3>
-          <p className="text-xs text-slate-500 font-bold">كافة المهام الموكلة لقسمك منجزة ومحولة للإدارة بنجاح.</p>
+          <p className="text-xs text-slate-400 mt-1">جميع المهام الميدانية الموكلة لإدارتك مكتملة ومحدّثة لحظياً.</p>
         </div>
       ) : (
         <div className="space-y-6">
           {currentList.map((asg) => {
             const currentData = formDataState[asg.asgId] || { action: "", notes: "" };
             const isSubmitting = submittingId === asg.asgId;
+            const currentPhoto = photosState[asg.asgId];
+            const isCompressing = compressingAsgId === asg.asgId;
 
             return (
               <div
                 key={asg.asgId}
-                className="bg-white rounded-[2rem] border-2 border-[#D49A3D]/30 shadow-sm hover:border-[#D49A3D] transition-all overflow-hidden"
+                className="bg-white rounded-[2rem] border-2 border-[#D49A3D]/30 shadow-md overflow-hidden transition-all hover:border-[#D49A3D]"
               >
                 {/* Card Header */}
-                <div className="p-5 sm:p-6 bg-[#FAF7F4] border-b border-[#D49A3D]/20 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2">
+                <div className="bg-gradient-to-r from-[#FAF7F4] via-white to-[#FAF7F4] p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2.5">
                     <span className="px-3 py-1 bg-[#1B1111] text-[#FFC217] font-black text-xs rounded-xl shadow-xs">
-                      بلاغ رقم #{asg.caseNumber}
+                      #{asg.caseNumber}
                     </span>
-                    {asg.round > 1 && (
-                      <span className="px-2.5 py-0.5 bg-[#FAF3F3] text-[#682722] font-black text-[11px] rounded-lg border border-[#682722]/30">
-                        الجولة {asg.round} (معاد للاستكمال)
-                      </span>
-                    )}
-                    {/* Status Badge */}
+                    <span className="px-3 py-1 bg-[#FAF3F3] text-[#682722] font-black text-xs rounded-xl border border-[#682722]/20">
+                      جولة #{asg.round}
+                    </span>
                     {asg.isAccepted || asg.asgStatus === "accepted" || asg.asgStatus === "approved" ? (
                       <span className="px-3 py-1 bg-emerald-600 text-white font-black text-xs rounded-xl shadow-xs flex items-center gap-1.5">
                         <CheckCircle2 className="w-3.5 h-3.5" />
@@ -379,7 +533,6 @@ export default function FieldQueue({
 
                 {/* Card Body */}
                 <div className="p-5 sm:p-6 space-y-4">
-                  
                   {/* Meta Tags */}
                   <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-slate-700">
                     <span className="flex items-center gap-1.5 bg-[#FAF7F4] border border-slate-200 px-3 py-1.5 rounded-xl">
@@ -411,6 +564,30 @@ export default function FieldQueue({
                       </div>
                     )}
                   </div>
+
+                  {/* Inspector Photo (Before) if attached */}
+                  {asg.photoBefore && (
+                    <div className="flex items-center gap-3 bg-amber-50/70 border border-[#D49A3D]/40 p-3 rounded-2xl">
+                      <img
+                        src={asg.photoBefore}
+                        alt="صورة المخالفة قبل المعالجة"
+                        className="w-14 h-14 object-cover rounded-xl border border-slate-200 flex-shrink-0 cursor-pointer"
+                        onClick={() => setViewingPhotoUrl(asg.photoBefore || null)}
+                      />
+                      <div className="flex-1 min-w-0 text-xs">
+                        <div className="font-black text-[#1B1111]">📷 صورة المخالفة المرفقة من المفتش (قبل المعالجة)</div>
+                        <div className="text-slate-500 text-[11px] mt-0.5">انقر على الصورة لتكبيرها وفحص المشكلة بدقة</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setViewingPhotoUrl(asg.photoBefore || null)}
+                        className="p-2 text-[#D49A3D] hover:bg-white rounded-xl transition-colors"
+                        title="تكبير الصورة"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
 
                   {/* Live Urgent Admin Directive / Note (أثناء التنفيذ) */}
                   {asg.inProgressNote && (
@@ -449,25 +626,8 @@ export default function FieldQueue({
                     <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-400 rounded-2xl space-y-2.5">
                       <div className="flex items-center gap-2 text-emerald-900 font-black text-xs">
                         <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-                        <span>تم قبول واعتماد معالجتك من قِبل إدارة القسم بنجاح ✅</span>
+                        <span>تم قبول واعتماد الإجراء من قبل الإدارة ✅</span>
                       </div>
-
-                      {(asg.actionTaken || asg.executorNotes) && (
-                        <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 text-xs space-y-1.5">
-                          {asg.actionTaken && (
-                            <div>
-                              <span className="font-bold text-slate-500 block text-[11px]">🛠️ الإجراء التصحيحي المعتمد:</span>
-                              <p className="font-black text-slate-800">{asg.actionTaken}</p>
-                            </div>
-                          )}
-                          {asg.executorNotes && (
-                            <div>
-                              <span className="font-bold text-blue-600 block text-[11px]">💬 ملاحظاتك المرفقة:</span>
-                              <p className="font-bold text-blue-950 bg-blue-50/70 p-2 rounded-lg border border-blue-200">{asg.executorNotes}</p>
-                            </div>
-                          )}
-                        </div>
-                      )}
 
                       {asg.adminFeedback && (
                         <div className="p-3 bg-white/90 rounded-xl border border-emerald-200 text-xs text-emerald-950 font-bold">
@@ -486,7 +646,7 @@ export default function FieldQueue({
                         <span>تم إرسال ردك وإجراءك التصحيحي للإدارة بنجاح وهو قيد المراجعة والاعتماد ⏳</span>
                       </div>
 
-                      {(asg.actionTaken || asg.executorNotes) && (
+                      {(asg.actionTaken || asg.executorNotes || asg.photoAfter) && (
                         <div className="bg-white/90 p-3 rounded-xl border border-purple-200 text-xs space-y-2">
                           {asg.actionTaken && (
                             <div>
@@ -498,6 +658,18 @@ export default function FieldQueue({
                             <div>
                               <span className="font-bold text-blue-600 block text-[11px]">💬 ملاحظاتك المرفقة:</span>
                               <p className="font-bold text-blue-950 bg-blue-50/70 p-2 rounded-lg border border-blue-200">{asg.executorNotes}</p>
+                            </div>
+                          )}
+                          {asg.photoAfter && (
+                            <div className="pt-1">
+                              <button
+                                type="button"
+                                onClick={() => setViewingPhotoUrl(asg.photoAfter || null)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl text-xs font-black text-emerald-900"
+                              >
+                                <Camera className="w-4 h-4 text-emerald-600" />
+                                <span>عرض صورة إثبات المعالجة الميدانية المرفقة</span>
+                              </button>
                             </div>
                           )}
                         </div>
@@ -540,19 +712,93 @@ export default function FieldQueue({
                             className="w-full h-11 px-3 bg-[#FAF7F4] border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-[#D49A3D]/30 focus:border-[#D49A3D] focus:outline-none"
                           />
                         </div>
+
+                        {/* Photo After Capture (صورة المعالجة بعد التنفيذ) */}
+                        <div className="bg-[#FAF7F4] p-3 rounded-2xl border border-[#D49A3D]/30 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-black text-[#1B1111] flex items-center gap-1.5">
+                              <Camera className="w-4 h-4 text-[#D49A3D]" />
+                              <span>📷 صورة إثبات المعالجة (بعد الإنجاز)</span>
+                              <span className="text-[10px] text-slate-400 font-normal">(اختياري - ضغط تلقائي WebP)</span>
+                            </label>
+                            {currentPhoto && (
+                              <span className="text-[10px] font-mono font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded-md">
+                                {currentPhoto.sizeKb} KB
+                              </span>
+                            )}
+                          </div>
+
+                          <input
+                            ref={(el) => {
+                              fileInputRefs.current[asg.asgId] = el;
+                            }}
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={(e) => handlePhotoSelect(asg.asgId, e)}
+                            className="hidden"
+                            id={`photo-input-${asg.asgId}`}
+                          />
+
+                          {currentPhoto ? (
+                            <div className="rounded-xl border-2 border-[#D49A3D] bg-white p-2 flex items-center gap-3">
+                              <img
+                                src={currentPhoto.base64}
+                                alt="معاينة صورة المعالجة"
+                                className="w-14 h-14 object-cover rounded-lg border border-slate-200 flex-shrink-0"
+                              />
+                              <div className="flex-1 min-w-0 text-[11px]">
+                                <div className="font-black text-slate-800 flex items-center gap-1">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>تم تجهيز الصورة</span>
+                                </div>
+                                <div className="text-slate-500 font-mono text-[10px]">
+                                  {currentPhoto.width}x{currentPhoto.height} بكسل
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => removePhoto(asg.asgId)}
+                                className="p-2 text-rose-600 hover:bg-rose-50 rounded-xl"
+                                title="حذف الصورة"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={isCompressing}
+                              onClick={() => fileInputRefs.current[asg.asgId]?.click()}
+                              className="w-full py-2.5 px-3 border border-dashed border-[#D49A3D]/60 hover:border-[#D49A3D] bg-white rounded-xl text-xs font-bold text-slate-700 hover:text-[#1B1111] transition-all flex items-center justify-center gap-2"
+                            >
+                              {isCompressing ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin text-[#D49A3D]" />
+                                  <span>جارٍ ضغط الصورة إلى WebP...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Camera className="w-4 h-4 text-[#D49A3D]" />
+                                  <span>التقاط صورة إثبات المعالجة بالكاميرا</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {/* Action Submit Button */}
                       <div className="flex justify-end pt-1">
                         <button
                           onClick={() => handleExecute(asg)}
-                          disabled={isSubmitting || !currentData.action?.trim()}
-                          className="px-6 py-3 bg-gradient-to-r from-[#D49A3D] via-[#E5A93C] to-[#B87B28] hover:opacity-95 disabled:bg-slate-200 disabled:text-slate-400 text-[#1B1111] font-black text-xs rounded-xl shadow-md shadow-[#D49A3D]/30 transition-all flex items-center gap-2 cursor-pointer"
+                          disabled={isSubmitting || isCompressing || !currentData.action?.trim()}
+                          className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-[#D49A3D] via-[#E5A93C] to-[#B87B28] hover:opacity-95 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-[#1B1111] font-black text-xs rounded-xl shadow-md shadow-[#D49A3D]/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
                         >
                           {isSubmitting ? (
                             <>
                               <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>جارٍ الاعتماد والإرسال...</span>
+                              <span>جارٍ الإرسال والتأكيد لحظياً...</span>
                             </>
                           ) : (
                             <>
@@ -564,7 +810,6 @@ export default function FieldQueue({
                       </div>
                     </>
                   )}
-
                 </div>
               </div>
             );

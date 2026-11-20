@@ -46,9 +46,9 @@ export default async function InspectorDashboard() {
   const recentCases = canViewOwnInspections
     ? (await db.execute(
         isAll
-          ? "SELECT id, case_number, internal_id, location_name, nc_name, description, status, obs_date, obs_time FROM cases_master ORDER BY case_number DESC LIMIT 20"
+          ? "SELECT id, case_number, internal_id, location_name, nc_name, description, status, obs_date, obs_time, photo_before FROM cases_master ORDER BY case_number DESC LIMIT 20"
           : {
-              sql: "SELECT id, case_number, internal_id, location_name, nc_name, description, status, obs_date, obs_time FROM cases_master WHERE inspector_pin = ? ORDER BY case_number DESC LIMIT 20",
+              sql: "SELECT id, case_number, internal_id, location_name, nc_name, description, status, obs_date, obs_time, photo_before FROM cases_master WHERE inspector_pin = ? ORDER BY case_number DESC LIMIT 20",
               args: [session.pin_code],
             }
       )).rows

@@ -25,10 +25,10 @@ import {
   saveFormDraft,
   getFormDraft,
   clearFormDraft,
-  compressImageFile,
   getCurrentGPS,
   addToOfflineQueue,
 } from "@/lib/offline-client";
+import { compressImageClient } from "@/lib/image-compression";
 import { submitFormResponseAction } from "@/app/actions/dynamic-forms";
 import { useRouter } from "next/navigation";
 
@@ -127,12 +127,12 @@ export default function DynamicFormRenderer({
     }));
   };
 
-  // Handle Camera / Image Compression
+  // Handle Camera / Image Compression to WebP
   const handleImageCapture = async (qId: number, file: File) => {
     try {
-      const base64 = await compressImageFile(file);
-      setMediaData((prev) => ({ ...prev, [qId]: base64 }));
-      handleAnswerChange(qId, "[مرفق صورة توثيقية]");
+      const res = await compressImageClient(file, 1200, 0.78);
+      setMediaData((prev) => ({ ...prev, [qId]: res.base64 }));
+      handleAnswerChange(qId, "[مرفق صورة توثيقية WebP]");
     } catch (e) {
       alert("تعذر ضغط أو معالجة الصورة الملتقطة");
     }

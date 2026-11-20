@@ -14,6 +14,7 @@ import {
   curateAndAssignResponseAction,
   submitDynamicResponseExecutionAction,
 } from "@/app/actions/dynamic-forms";
+import { uploadImageAction } from "@/app/actions/upload-blob";
 
 export interface OfflineQueueItem {
   id: string;
@@ -33,46 +34,176 @@ export interface OfflineQueueItem {
   payload: any;
   status: "pending" | "syncing" | "failed";
   error?: string;
+  retryCount?: number;
 }
 
-const STORAGE_KEY = "marasim_offline_queue_v2";
-const LISTENERS: Array<(queue: OfflineQueueItem[]) => void> = [];
+// ==========================================
+// 📦 INDEXEDDB OUTBOX STORAGE ENGINE
+// ==========================================
 
-export function getOfflineQueue(): OfflineQueueItem[] {
-  if (typeof window === "undefined") return [];
+const DB_NAME = "marasim_capa_offline_v3";
+const DB_VERSION = 1;
+const STORE_NAME = "outbox_queue";
+const LEGACY_STORAGE_KEY = "marasim_offline_queue_v2";
+
+let memoryQueue: OfflineQueueItem[] = [];
+let isInitialized = false;
+const LISTENERS: Array<(queue: OfflineQueueItem[]) => void> = [];
+let isSyncingActive = false;
+
+function openOutboxDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof window === "undefined" || !("indexedDB" in window)) {
+      return reject(new Error("IndexedDB غير مدعوم في هذا المتصفح"));
+    }
+
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: "id" });
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function getAllFromIndexedDB(): Promise<OfflineQueueItem[]> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    console.error("Failed to read offline queue", e);
+    const db = await openOutboxDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+      req.onsuccess = () => {
+        const items = (req.result || []) as OfflineQueueItem[];
+        // Sort descending by id/timestamp
+        items.sort((a, b) => (b.id > a.id ? 1 : -1));
+        resolve(items);
+      };
+      req.onerror = () => resolve([]);
+    });
+  } catch (err) {
+    console.warn("IndexedDB read error, using fallback:", err);
     return [];
   }
 }
 
-function saveQueue(queue: OfflineQueueItem[]) {
-  if (typeof window === "undefined") return;
+async function putToIndexedDB(item: OfflineQueueItem): Promise<void> {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
-    LISTENERS.forEach((fn) => fn(queue));
-  } catch (e) {
-    console.error("Failed to save offline queue", e);
+    const db = await openOutboxDB();
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    tx.objectStore(STORE_NAME).put(item);
+  } catch (err) {
+    console.warn("IndexedDB put error:", err);
   }
 }
 
+async function deleteFromIndexedDB(id: string): Promise<void> {
+  try {
+    const db = await openOutboxDB();
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    tx.objectStore(STORE_NAME).delete(id);
+  } catch (err) {
+    console.warn("IndexedDB delete error:", err);
+  }
+}
+
+async function clearAllIndexedDB(): Promise<void> {
+  try {
+    const db = await openOutboxDB();
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    tx.objectStore(STORE_NAME).clear();
+  } catch (err) {
+    console.warn("IndexedDB clear error:", err);
+  }
+}
+
+function notifyListeners() {
+  const snapshot = [...memoryQueue];
+  LISTENERS.forEach((fn) => {
+    try {
+      fn(snapshot);
+    } catch (e) {
+      console.error("Queue listener error:", e);
+    }
+  });
+}
+
+// Initialize memory queue from IndexedDB on startup
+async function initOutboxQueue() {
+  if (typeof window === "undefined" || isInitialized) return;
+  isInitialized = true;
+
+  try {
+    let items = await getAllFromIndexedDB();
+
+    // Migrate from legacy localStorage if exists
+    try {
+      const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (legacyRaw) {
+        const legacyItems = JSON.parse(legacyRaw) as OfflineQueueItem[];
+        if (Array.isArray(legacyItems) && legacyItems.length > 0) {
+          for (const item of legacyItems) {
+            if (!items.some((i) => i.id === item.id)) {
+              items.push(item);
+              await putToIndexedDB(item);
+            }
+          }
+          localStorage.removeItem(LEGACY_STORAGE_KEY);
+        }
+      }
+    } catch {}
+
+    memoryQueue = items;
+    notifyListeners();
+  } catch (err) {
+    console.warn("Failed to initialize outbox queue:", err);
+  }
+}
+
+// Start initialization immediately in browser
+if (typeof window !== "undefined") {
+  initOutboxQueue();
+}
+
+/**
+ * Returns current snapshot of outbox queue (synchronous & instant)
+ */
+export function getOfflineQueue(): OfflineQueueItem[] {
+  if (typeof window === "undefined") return [];
+  if (!isInitialized) {
+    initOutboxQueue();
+  }
+  return [...memoryQueue];
+}
+
+/**
+ * Subscribes to outbox queue updates
+ */
 export function subscribeToQueue(fn: (queue: OfflineQueueItem[]) => void) {
   LISTENERS.push(fn);
+  // Initial callback with current queue
+  try {
+    fn([...memoryQueue]);
+  } catch {}
   return () => {
     const idx = LISTENERS.indexOf(fn);
     if (idx !== -1) LISTENERS.splice(idx, 1);
   };
 }
 
+/**
+ * Adds an item to the outbox queue (IndexedDB + memory cache)
+ */
 export function addToOfflineQueue(
   type: OfflineQueueItem["type"],
   title: string,
   payload: any
 ): OfflineQueueItem {
-  const queue = getOfflineQueue();
   const newItem: OfflineQueueItem = {
     id: `queue_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     type,
@@ -84,56 +215,144 @@ export function addToOfflineQueue(
     }),
     payload,
     status: "pending",
+    retryCount: 0,
   };
 
-  queue.unshift(newItem);
-  saveQueue(queue);
+  memoryQueue.unshift(newItem);
+  notifyListeners();
+
+  // Async persist to IndexedDB
+  putToIndexedDB(newItem).catch((err) => console.error("Error saving to IndexedDB:", err));
+
   return newItem;
 }
 
+/**
+ * Removes an item from the outbox queue
+ */
 export function removeFromOfflineQueue(id: string) {
-  const queue = getOfflineQueue().filter((item) => item.id !== id);
-  saveQueue(queue);
+  memoryQueue = memoryQueue.filter((item) => item.id !== id);
+  notifyListeners();
+  deleteFromIndexedDB(id).catch((err) => console.error("Error deleting from IndexedDB:", err));
 }
 
+/**
+ * Clears the entire outbox queue
+ */
 export function clearOfflineQueue() {
-  saveQueue([]);
+  memoryQueue = [];
+  notifyListeners();
+  clearAllIndexedDB().catch((err) => console.error("Error clearing IndexedDB:", err));
 }
+
+// ==========================================
+// 🚀 SINGLE ITEM PROCESSOR & CLOUD SYNC
+// ==========================================
 
 export async function processSingleQueueItem(
   item: OfflineQueueItem
 ): Promise<{ success: boolean; error?: string }> {
   try {
     switch (item.type) {
-      case "DYNAMIC_FORM_RESPONSE": {
-        const res = await submitFormResponseAction(item.payload);
-        return res;
-      }
-      case "CURATED_ASSIGNMENT": {
-        const res = await curateAndAssignResponseAction(item.payload);
-        return res;
-      }
-      case "DYNAMIC_FORM_EXECUTION": {
-        const res = await submitDynamicResponseExecutionAction(item.payload);
-        return res;
-      }
       case "INSPECTION": {
+        // Auto-upload image to Vercel Blob if base64 exists
+        if (
+          item.payload.photo_before &&
+          typeof item.payload.photo_before === "string" &&
+          item.payload.photo_before.startsWith("data:image/")
+        ) {
+          try {
+            const uploadRes = await uploadImageAction(item.payload.photo_before, "insp_before");
+            if (uploadRes.success && uploadRes.url) {
+              item.payload.photo_before = uploadRes.url;
+            }
+          } catch (e) {
+            console.warn("Blob upload fallback during inspection sync:", e);
+          }
+        }
         const res = await createInspectionAction(item.payload);
         return res;
       }
+
       case "EXECUTION": {
+        // Auto-upload execution after photo if base64 exists
+        if (
+          item.payload.photo_after &&
+          typeof item.payload.photo_after === "string" &&
+          item.payload.photo_after.startsWith("data:image/")
+        ) {
+          try {
+            const uploadRes = await uploadImageAction(item.payload.photo_after, "exec_after");
+            if (uploadRes.success && uploadRes.url) {
+              item.payload.photo_after = uploadRes.url;
+            }
+          } catch (e) {
+            console.warn("Blob upload fallback during execution sync:", e);
+          }
+        }
         const res = await submitExecutionAction(
           item.payload.caseId,
           item.payload.asgId,
           item.payload.actionTaken,
-          item.payload.notes
+          item.payload.notes,
+          item.payload.photo_after
         );
         return res;
       }
+
+      case "DYNAMIC_FORM_RESPONSE": {
+        // Auto-upload any inline question photos in dynamic forms
+        if (Array.isArray(item.payload.answers)) {
+          for (const ans of item.payload.answers) {
+            if (
+              ans.media_data &&
+              typeof ans.media_data === "string" &&
+              ans.media_data.startsWith("data:image/")
+            ) {
+              try {
+                const uploadRes = await uploadImageAction(ans.media_data, "dynamic_ans");
+                if (uploadRes.success && uploadRes.url) {
+                  ans.media_data = uploadRes.url;
+                }
+              } catch (e) {
+                console.warn("Blob upload fallback during form answer sync:", e);
+              }
+            }
+          }
+        }
+        const res = await submitFormResponseAction(item.payload);
+        return res;
+      }
+
+      case "DYNAMIC_FORM_EXECUTION": {
+        if (
+          item.payload.photoBase64 &&
+          typeof item.payload.photoBase64 === "string" &&
+          item.payload.photoBase64.startsWith("data:image/")
+        ) {
+          try {
+            const uploadRes = await uploadImageAction(item.payload.photoBase64, "dynamic_exec");
+            if (uploadRes.success && uploadRes.url) {
+              item.payload.photoBase64 = uploadRes.url;
+            }
+          } catch (e) {
+            console.warn("Blob upload fallback during dynamic execution sync:", e);
+          }
+        }
+        const res = await submitDynamicResponseExecutionAction(item.payload);
+        return res;
+      }
+
+      case "CURATED_ASSIGNMENT": {
+        const res = await curateAndAssignResponseAction(item.payload);
+        return res;
+      }
+
       case "DECISION_APPROVE": {
         const res = await approveTaskAction(item.payload.asgId, item.payload.notes);
         return res;
       }
+
       case "DECISION_REASSIGN": {
         const res = await reassignTaskAction(
           item.payload.caseId,
@@ -142,10 +361,12 @@ export async function processSingleQueueItem(
         );
         return res;
       }
+
       case "DECISION_CLOSE": {
         const res = await closeCaseEntirelyAction(item.payload.caseId, item.payload.closureNotes);
         return res;
       }
+
       case "ASSIGNMENT": {
         const res = await assignCaseAction(
           item.payload.caseId,
@@ -154,78 +375,122 @@ export async function processSingleQueueItem(
         );
         return res;
       }
+
       case "CHANGE_PIN": {
         const res = await changePinAction(item.payload.currentPin, item.payload.newPin);
         return res;
       }
+
       default:
         return { success: false, error: "نوع العملية غير معروف" };
     }
   } catch (err: any) {
     const isFetchErr = err?.message?.includes("fetch") || err?.toString()?.includes("fetch");
-    return { 
-      success: false, 
-      error: isFetchErr ? "تعذر الاتصال بالخادم أو قاعدة البيانات (الجهاز غير متصل أو السيرفر غير متاح)" : (err.message || "حدث خطأ أثناء المزامنة") 
+    return {
+      success: false,
+      error: isFetchErr
+        ? "تعذر الاتصال بالخادم أو قاعدة البيانات (الجهاز غير متصل أو السيرفر غير متاح)"
+        : err.message || "حدث خطأ أثناء المزامنة",
     };
   }
 }
 
+/**
+ * Synchronizes all pending items in the offline queue to the server.
+ */
 export async function syncAllOfflineQueue(
   onProgress?: (syncedCount: number, totalCount: number) => void
 ): Promise<{ successCount: number; failureCount: number }> {
-  const queue = getOfflineQueue();
-  if (queue.length === 0) return { successCount: 0, failureCount: 0 };
-
-  let successCount = 0;
-  let failureCount = 0;
-  const remainingQueue: OfflineQueueItem[] = [];
-
-  for (let i = 0; i < queue.length; i++) {
-    const item = queue[i];
-    item.status = "syncing";
-    saveQueue(queue);
-
-    const result = await processSingleQueueItem(item);
-    if (result.success) {
-      successCount++;
-    } else {
-      failureCount++;
-      item.status = "failed";
-      item.error = result.error || "تعذر الإرسال";
-      remainingQueue.push(item);
-    }
-
-    if (onProgress) {
-      onProgress(successCount + failureCount, queue.length);
-    }
+  if (isSyncingActive) {
+    return { successCount: 0, failureCount: 0 };
   }
+  isSyncingActive = true;
 
-  saveQueue(remainingQueue);
-  return { successCount, failureCount };
+  try {
+    const queue = [...memoryQueue];
+    if (queue.length === 0) return { successCount: 0, failureCount: 0 };
+
+    let successCount = 0;
+    let failureCount = 0;
+
+    for (let i = 0; i < queue.length; i++) {
+      const item = queue[i];
+      item.status = "syncing";
+      notifyListeners();
+
+      const result = await processSingleQueueItem(item);
+      if (result.success) {
+        successCount++;
+        removeFromOfflineQueue(item.id);
+      } else {
+        failureCount++;
+        item.status = "failed";
+        item.error = result.error || "تعذر الإرسال";
+        item.retryCount = (item.retryCount || 0) + 1;
+        putToIndexedDB(item).catch(() => {});
+        notifyListeners();
+      }
+
+      if (onProgress) {
+        onProgress(successCount + failureCount, queue.length);
+      }
+    }
+
+    return { successCount, failureCount };
+  } finally {
+    isSyncingActive = false;
+  }
 }
 
-// Background Auto-Sync setup when browser comes online
+// ==========================================
+// 🔄 AUTOMATIC BACKGROUND SYNC WORKER
+// ==========================================
+
+export function triggerQuickRefresh() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("marasim_data_refreshed"));
+  }
+}
+
 if (typeof window !== "undefined") {
-  window.addEventListener("online", () => {
-    console.log("🌐 Connection restored! Auto-syncing pending offline items...");
-    syncAllOfflineQueue().then(({ successCount }) => {
-      if (successCount > 0) {
+  const runBackgroundSync = async () => {
+    if (!navigator.onLine || isSyncingActive || memoryQueue.length === 0) return;
+
+    try {
+      const res = await syncAllOfflineQueue();
+      if (res.successCount > 0) {
         window.dispatchEvent(
           new CustomEvent("marasim_notification", {
             detail: {
               type: "success",
-              title: "تمت المزامنة بنجاح 🚀",
-              message: `تم ترحيل (${successCount}) عملية محفوظة في وضع عدم الاتصال إلى الخادم تلقائياً.`,
+              title: "تمت المزامنة التلقائية بنجاح 🚀",
+              message: `تم ترحيل (${res.successCount}) معاملة من صندوق الصادر إلى السيرفر تلقائياً بمجرد توفر الاتصال.`,
             },
           })
         );
+        triggerQuickRefresh();
       }
-    });
+    } catch (e) {
+      console.warn("Background auto-sync tick skipped:", e);
+    }
+  };
+
+  // Sync immediately when connection is restored
+  window.addEventListener("online", () => {
+    console.log("🌐 Connection restored! Starting auto-sync...");
+    runBackgroundSync();
   });
+
+  // Background interval tick every 15 seconds
+  setInterval(() => {
+    if (navigator.onLine && memoryQueue.length > 0) {
+      runBackgroundSync();
+    }
+  }, 15000);
 }
 
 // ==========================================
-// INDEXEDDB DRAFTS ENGINE FOR DYNAMIC FORMS
+// 📝 INDEXEDDB DRAFTS ENGINE FOR DYNAMIC FORMS
 // ==========================================
 
 const DRAFT_DB_NAME = "marasim_capa_drafts_v1";
@@ -267,11 +532,15 @@ export async function saveFormDraft(
       saved_at: new Date().toISOString(),
     });
   } catch (e) {
-    // Fallback to localStorage
     if (typeof window !== "undefined") {
       localStorage.setItem(
         `marasim_draft_${templateId}`,
-        JSON.stringify({ answers, current_step: currentStep, location_code: locationCode, saved_at: new Date().toISOString() })
+        JSON.stringify({
+          answers,
+          current_step: currentStep,
+          location_code: locationCode,
+          saved_at: new Date().toISOString(),
+        })
       );
     }
   }
@@ -311,48 +580,8 @@ export async function clearFormDraft(templateId: number): Promise<void> {
 }
 
 // ==========================================
-// OFFLINE MEDIA & GPS HELPERS
+// 📷 OFFLINE MEDIA & GPS HELPERS
 // ==========================================
-
-export async function compressImageFile(file: File, maxDimension = 1200, quality = 0.72): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > maxDimension) {
-            height = Math.round((height * maxDimension) / width);
-            width = maxDimension;
-          }
-        } else {
-          if (height > maxDimension) {
-            width = Math.round((width * maxDimension) / height);
-            height = maxDimension;
-          }
-        }
-
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          return resolve(String(e.target?.result || ""));
-        }
-        ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL("image/jpeg", quality);
-        resolve(dataUrl);
-      };
-      img.onerror = reject;
-      img.src = String(e.target?.result);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
 
 export async function getCurrentGPS(): Promise<{ lat: number; lng: number } | null> {
   if (typeof window === "undefined" || !("geolocation" in navigator)) {

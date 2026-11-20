@@ -218,12 +218,25 @@ export default function OutboxModal({ isOpen, onClose }: OutboxModalProps) {
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-white/5 rounded-xl border border-white/10">{getIconForType(item.type)}</div>
                   <div>
-                    <h4 className="text-xs font-black text-white">{item.title}</h4>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs font-black text-white">{item.title}</h4>
+                      {(item.payload?.photo_before || item.payload?.photo_after || item.payload?.photoBase64) && (
+                        <span className="text-[9px] bg-amber-500/20 text-[#FFC217] px-1.5 py-0.5 rounded border border-[#D49A3D]/40 font-mono">
+                          📷 صورة
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2 mt-1 text-[10px] text-amber-200/70 font-semibold">
                       <Clock className="w-3 h-3 text-[#FFC217]" />
                       <span>{item.timestamp}</span>
+                      {item.status === "syncing" && (
+                        <span className="text-amber-300 font-bold animate-pulse">• جارٍ الترحيل للسيرفر...</span>
+                      )}
                       {item.status === "failed" && (
-                        <span className="text-rose-400 font-black">• فشل الإرسال (انقر لإعادة المحاولة)</span>
+                        <span className="text-rose-400 font-black">• {item.error || "فشل الإرسال (انقر لإعادة المحاولة)"}</span>
+                      )}
+                      {item.status === "pending" && (
+                        <span className="text-emerald-400 font-medium">• جاهز للمزامنة</span>
                       )}
                     </div>
                   </div>
