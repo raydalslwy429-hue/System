@@ -73,7 +73,7 @@ export default async function AdminDashboard() {
 
   // Categories (حالات عدم المطابقة) with department and section names
   const categoriesRes = await db.execute(`
-    SELECT c.id, c.code, c.name, c.severity, c.department_code, c.section_code, c.status, c.description, c.created_at, c.photo_before,
+    SELECT c.id, c.code, c.name, c.severity, c.department_code, c.section_code, c.status, c.description, c.created_at,
            COALESCE(d.name, c.department_code) as department_name,
            COALESCE(l.name, c.section_code) as section_name
     FROM categories c
