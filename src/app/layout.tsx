@@ -10,8 +10,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "منظومة حوكمة الجودة والبلاغات التصحيحية | CAPA V2",
-  description: "نظام إدارة ومتابعة بلاغات عدم المطابقة الميدانية والإجراءات التصحيحية والوقائية",
+  title: "النظام الإداري لمطاعم المراسيم",
+  description: "النظام الإداري الموحد لإدارة الجودة والعمليات الميدانية - مطاعم المراسيم",
   manifest: "/manifest.json",
   icons: {
     icon: "/brand/logo.png",
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "المراسيم CAPA",
+    title: "النظام الإداري لمطاعم المراسيم",
   },
 };
 

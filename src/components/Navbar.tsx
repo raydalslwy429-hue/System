@@ -137,7 +137,7 @@ export default function Navbar({
               </div>
               <p className="text-xs text-[#D49A3D] font-bold mt-0.5 flex items-center gap-1.5">
                 <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-emerald-400 animate-pulse" : "bg-rose-400"}`}></span>
-                النظام الإداري الموحد (CAPA V2)
+                النظام الإداري لمطاعم المراسيم
               </p>
             </div>
           </div>

@@ -141,7 +141,7 @@ export default async function FieldDashboard() {
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-black text-white">لوحة تنفيذ التكليفات الميدانية</h2>
                 <span className="text-[10px] bg-[#682722] text-amber-100 font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
-                  مطعم المراسيم
+                  النظام الإداري لمطاعم المراسيم
                 </span>
               </div>
               <p className="text-xs font-semibold text-amber-200/80 mt-1">

@@ -94,10 +94,7 @@ export default function AppDrawer({
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <h3 className="text-sm font-black text-white">النظام الإداري</h3>
-                <span className="text-[9px] bg-[#682722] text-amber-100 font-bold px-1.5 py-0.5 rounded-full border border-amber-500/30">
-                  مطاعم المراسيم
-                </span>
+                <h3 className="text-sm font-black text-white">النظام الإداري لمطاعم المراسيم</h3>
               </div>
               <p className="text-[10px] text-[#D49A3D] font-bold">القائمة الرئيسية والتنقل</p>
             </div>

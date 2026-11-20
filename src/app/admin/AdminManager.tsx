@@ -864,7 +864,7 @@ export default function AdminManager({
             </div>
             <div className={`overflow-hidden transition-all ${!sidebarOpen && "md:hidden"}`}>
               <h2 className="font-black text-sm text-[#1B1111] leading-tight">إدارة المنظومة</h2>
-              <p className="text-[10px] text-slate-400 font-bold">نظام CAPA وحوكمة الجودة</p>
+              <p className="text-[10px] text-slate-400 font-bold">النظام الإداري لمطاعم المراسيم</p>
             </div>
           </div>
 

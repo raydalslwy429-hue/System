@@ -109,7 +109,7 @@ export default function LoginPage() {
           </div>
 
           <h1 className="text-lg font-black text-[#1B1111] mt-2">
-            منظومة حوكمة ورقابة الجودة (CAPA V2)
+            النظام الإداري لمطاعم المراسيم
           </h1>
           <p className="text-xs font-bold text-slate-500 mt-0.5">
             تسجيل الدخول برقم المستخدم وكلمة المرور
@@ -245,7 +245,7 @@ export default function LoginPage() {
 
       {/* Footer Branding */}
       <footer className="relative z-10 text-center mt-4 text-amber-100/60 text-xs font-semibold">
-        <p>مطعم المراسيم © 2026 - نظام إدارة عدم المطابقة والإجراءات التصحيحية</p>
+        <p>مطعم المراسيم © 2026 - النظام الإداري الموحد</p>
       </footer>
     </div>
   );
