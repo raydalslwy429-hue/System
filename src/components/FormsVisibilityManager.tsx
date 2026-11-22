@@ -28,6 +28,7 @@ import {
   FileText,
 } from "lucide-react";
 import { FormTemplate } from "@/types/dynamic-forms";
+import * as XLSX from "xlsx";
 import {
   getDynamicTemplatesAction,
   updateTemplateAllowedRolesAction,
@@ -184,25 +185,47 @@ export default function FormsVisibilityManager({
   const handleExport = async (templateId: number) => {
     try {
       const res = await exportDynamicFormToExcelAction(templateId);
-      if (res.success && res.rows) {
-        // Download generated data as CSV/Excel compatible file
+      if (res.success && res.rows && res.rows.length > 0) {
         const cols = res.columns || [];
         const rows = res.rows || [];
-        const header = cols.map((c) => `"${c.header}"`).join(",");
-        const body = rows
-          .map((r) => cols.map((c) => `"${String(r[c.key] || "").replace(/"/g, '""')}"`).join(","))
-          .join("\n");
-        const csvContent = "\uFEFF" + header + "\n" + body;
-        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${res.sheetName || "form_responses"}_${Date.now()}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
-        setMessage({ type: "success", text: `تم بنجاح تصدير سجل استجابات الاستمارة!` });
+
+        // Build cleanly formatted Excel rows where every column has its dedicated Arabic header
+        const excelRows = rows.map((r) => {
+          const rowObj: Record<string, any> = {};
+          cols.forEach((c) => {
+            const val = r[c.key];
+            rowObj[c.header] = val !== undefined && val !== null ? val : "-";
+          });
+          return rowObj;
+        });
+
+        const ws = XLSX.utils.json_to_sheet(excelRows);
+
+        // Auto-calculate column widths for perfect reading
+        const colWidths = cols.map((c) => {
+          const headerLen = (c.header || "").length;
+          const maxValLen = Math.max(
+            headerLen,
+            ...rows.slice(0, 30).map((r) => String(r[c.key] || "").length)
+          );
+          return { wch: Math.min(Math.max(maxValLen + 3, 12), 60) };
+        });
+        ws["!cols"] = colWidths;
+        ws["!views"] = [{ RTL: true }];
+
+        const wb = XLSX.utils.book_new();
+        const safeTitle = (res.sheetName || "الاستجابات").replace(/[\\/*?[\]:]/g, "").substring(0, 31);
+        XLSX.utils.book_append_sheet(wb, ws, safeTitle);
+
+        const filename = `${safeTitle}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        XLSX.writeFile(wb, filename);
+
+        setMessage({
+          type: "success",
+          text: `🎉 تم بنجاح تصدير ملف الإكسيل المنسق (${filename}) بأعمدة مستقلة لكافة البيانات والأسئلة!`,
+        });
       } else {
-        setMessage({ type: "error", text: res.error || "لا توجد استجابات مسجلة لهذه الاستمارة بعد" });
+        setMessage({ type: "error", text: res.error || "لا توجد استجابات مسجلة لهذه الاستمارة بعد لتصديرها" });
       }
     } catch (err: any) {
       setMessage({ type: "error", text: `فشل التصدير: ${err?.message || "خطأ غير متوقع"}` });
