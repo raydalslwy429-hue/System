@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { getUserEffectivePermissions } from "@/app/actions/capa";
+import { parseKoboXLSForm } from "@/lib/kobo-parser";
 import {
   FormTemplate,
   FormQuestion,
@@ -745,4 +746,265 @@ export async function exportDynamicFormToExcelAction(templateId: number) {
     columns,
     rows,
   };
+}
+
+// 10. Import Kobo / XLSForm from uploaded Excel Base64
+export async function importKoboXLSFormAction(data: {
+  base64Data: string;
+  filename: string;
+  customTitle?: string;
+  allowedRoles?: string;
+  departmentCode?: string;
+}) {
+  const session = await getSession();
+  if (!session || !(await hasFeaturePermission(session, "manage_forms"))) {
+    return { success: false, error: "صلاحية استيراد الاستمارات محصورة بالقيادة العامة للمنظومة" };
+  }
+
+  try {
+    const buffer = Buffer.from(data.base64Data, "base64");
+    const parsed = parseKoboXLSForm(buffer, data.customTitle || data.filename.replace(/\.[^/.]+$/, ""));
+
+    if (parsed.questions.length === 0) {
+      return { success: false, error: "لم يتم العثور على أي أسئلة صالحة في ملف الإكسيل المرفوع" };
+    }
+
+    const title = data.customTitle?.trim() || parsed.title;
+    let code = parsed.code.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
+    if (!code || code === "kobo") code = `kobo_${Date.now()}`;
+
+    // Check if code exists, append timestamp if needed
+    const existing = await db.execute({ sql: "SELECT id FROM forms_templates WHERE code = ?", args: [code] });
+    if (existing.rows.length > 0) {
+      code = `${code}_${Date.now().toString().slice(-4)}`;
+    }
+
+    const tRes = await db.execute({
+      sql: `INSERT INTO forms_templates (code, title, description, allowed_roles, department_code, allowed_users_json, version, status)
+            VALUES (?, ?, ?, ?, ?, 'all', 1, 'active')
+            RETURNING id;`,
+      args: [
+        code,
+        title,
+        parsed.description || `استمارة مستوردة من ملف Kobo: ${data.filename}`,
+        data.allowedRoles || "all",
+        data.departmentCode || "all",
+      ],
+    });
+
+    const templateId = Number(tRes.rows[0]?.id);
+
+    for (let idx = 0; idx < parsed.questions.length; idx++) {
+      const q = parsed.questions[idx];
+      await db.execute({
+        sql: `INSERT INTO form_questions (
+          template_id, question_code, question_text, field_type, is_required,
+          options_json, conditional_logic_json, step_number, order_index, help_text, placeholder
+        ) VALUES (?, ?, ?, ?, ?, ?, null, ?, ?, ?, ?)`,
+        args: [
+          templateId,
+          q.question_code || `q_${templateId}_${idx + 1}`,
+          q.question_text,
+          q.field_type,
+          q.is_required ? 1 : 0,
+          q.options ? JSON.stringify(q.options) : null,
+          q.step_number || 1,
+          idx + 1,
+          q.help_text || null,
+          q.placeholder || null,
+        ],
+      });
+    }
+
+    // Audit Log
+    await db.execute({
+      sql: `INSERT INTO audit_logs (log_id, event_type, actor_name, actor_role, details)
+            VALUES (?, 'FORM_KOBO_IMPORTED', ?, 'super_admin', ?)`,
+      args: [
+        `LOG-KOBO-${Date.now()}`,
+        session.full_name,
+        `تم بنجاح استيراد استمارة Kobo (${title}) تضم (${parsed.questions.length}) سؤالاً و(${parsed.stepsCount}) مراحل.`,
+      ],
+    });
+
+    revalidatePath("/admin");
+    revalidatePath("/inspector");
+    return {
+      success: true,
+      templateId,
+      title,
+      questionsCount: parsed.questions.length,
+      stepsCount: parsed.stepsCount,
+    };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "حدث خطأ أثناء قراءة ملف الإكسيل" };
+  }
+}
+
+// 11. Super Admin: Update Dynamic Template & its Questions (Edit Mode)
+export async function updateDynamicTemplateAction(data: {
+  templateId: number;
+  title: string;
+  description?: string;
+  allowedRoles?: string;
+  departmentCode?: string;
+  status?: "active" | "disabled" | "archived";
+  questions: Array<{
+    id?: number;
+    question_code?: string;
+    question_text: string;
+    field_type: string;
+    is_required: boolean | number;
+    options?: string[];
+    conditional_logic?: any;
+    step_number: number;
+    order_index: number;
+    help_text?: string;
+    placeholder?: string;
+  }>;
+}) {
+  const session = await getSession();
+  if (!session || !(await hasFeaturePermission(session, "manage_forms"))) {
+    return { success: false, error: "صلاحية تعديل الاستمارات محصورة بالقيادة العامة للمنظومة" };
+  }
+
+  const { templateId, title, description, allowedRoles, departmentCode, status, questions } = data;
+
+  if (!templateId || !title.trim()) {
+    return { success: false, error: "يرجى تحديد عنوان الاستمارة ورقمها التعريفي" };
+  }
+
+  // Update Template
+  await db.execute({
+    sql: `UPDATE forms_templates
+          SET title = ?,
+              description = ?,
+              allowed_roles = COALESCE(?, allowed_roles),
+              department_code = COALESCE(?, department_code),
+              status = COALESCE(?, status),
+              version = version + 1
+          WHERE id = ?`,
+    args: [
+      title.trim(),
+      description?.trim() || null,
+      allowedRoles || null,
+      departmentCode || null,
+      status || null,
+      templateId,
+    ],
+  });
+
+  // Re-sync questions: Delete old questions and re-insert updated list
+  await db.execute({
+    sql: "DELETE FROM form_questions WHERE template_id = ?",
+    args: [templateId],
+  });
+
+  for (let idx = 0; idx < questions.length; idx++) {
+    const q = questions[idx];
+    await db.execute({
+      sql: `INSERT INTO form_questions (
+        template_id, question_code, question_text, field_type, is_required,
+        options_json, conditional_logic_json, step_number, order_index, help_text, placeholder
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        templateId,
+        q.question_code || `q_${templateId}_${idx + 1}`,
+        q.question_text.trim(),
+        q.field_type,
+        q.is_required ? 1 : 0,
+        q.options ? JSON.stringify(q.options) : null,
+        q.conditional_logic ? JSON.stringify(q.conditional_logic) : null,
+        q.step_number || 1,
+        idx + 1,
+        q.help_text?.trim() || null,
+        q.placeholder?.trim() || null,
+      ],
+    });
+  }
+
+  // Audit Log
+  await db.execute({
+    sql: `INSERT INTO audit_logs (log_id, event_type, actor_name, actor_role, details)
+          VALUES (?, 'FORM_TEMPLATE_UPDATED', ?, 'super_admin', ?)`,
+    args: [
+      `LOG-FORM-UPDATE-${Date.now()}`,
+      session.full_name,
+      `تم تحديث الاستمارة (${title}) وحفظ (${questions.length}) أسئلة بنجاح.`,
+    ],
+  });
+
+  revalidatePath("/admin");
+  revalidatePath("/inspector");
+  return { success: true };
+}
+
+// 12. Delete Dynamic Template
+export async function deleteDynamicTemplateAction(templateId: number) {
+  const session = await getSession();
+  if (!session || !(await hasFeaturePermission(session, "manage_forms"))) {
+    return { success: false, error: "صلاحية حذف الاستمارات محصورة بالقيادة العامة للمنظومة" };
+  }
+
+  await db.execute({ sql: "DELETE FROM form_questions WHERE template_id = ?", args: [templateId] });
+  await db.execute({ sql: "DELETE FROM forms_templates WHERE id = ?", args: [templateId] });
+
+  revalidatePath("/admin");
+  revalidatePath("/inspector");
+  return { success: true };
+}
+
+// 13. Fetch All Submissions for a Template (for Submissions Grid)
+export async function getTemplateSubmissionsAction(templateId: number) {
+  const session = await getSession();
+  if (!session || !(await hasFeatureReadPermission(session, "manage_forms"))) {
+    return { success: false, error: "غير مصرح لك باستعراض سجل الإرسالات" };
+  }
+
+  const responsesRes = await db.execute({
+    sql: `SELECT r.*, COALESCE(l.name, r.location_code) as location_display_name
+          FROM forms_responses r
+          LEFT JOIN locations l ON r.location_code = l.code
+          WHERE r.template_id = ?
+          ORDER BY r.id DESC`,
+    args: [templateId],
+  });
+
+  const answersRes = await db.execute({
+    sql: `SELECT a.*, q.question_text, q.question_code
+          FROM forms_answers a
+          JOIN forms_responses r ON a.response_id = r.id
+          LEFT JOIN form_questions q ON a.question_id = q.id
+          WHERE r.template_id = ?
+          ORDER BY a.id ASC`,
+    args: [templateId],
+  });
+
+  const answers = answersRes.rows as unknown as any[];
+
+  const submissions = responsesRes.rows.map((r: any) => {
+    const rId = Number(r.id);
+    const rAnswers = answers.filter((a: any) => Number(a.response_id) === rId);
+    return {
+      id: rId,
+      template_id: Number(r.template_id),
+      response_number: Number(r.response_number),
+      user_name: String(r.user_name || "مستخدم"),
+      user_role: String(r.user_role || "-"),
+      location_name: String(r.location_display_name || r.location_code || "-"),
+      department_name: String(r.department_name || "-"),
+      status: String(r.status || "completed"),
+      created_at: String(r.created_at || "-"),
+      answers: rAnswers.map((a: any) => ({
+        question_id: Number(a.question_id),
+        question_text: String(a.question_text || `سؤال #${a.question_id}`),
+        answer_value: String(a.admin_override_value || a.answer_value || "-"),
+        media_data: a.media_data ? String(a.media_data) : undefined,
+        gps_lat: a.gps_lat ? Number(a.gps_lat) : undefined,
+        gps_lng: a.gps_lng ? Number(a.gps_lng) : undefined,
+      })),
+    };
+  });
+
+  return { success: true, submissions };
 }

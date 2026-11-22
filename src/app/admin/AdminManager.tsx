@@ -330,6 +330,7 @@ export default function AdminManager({
 
   // Dynamic Forms State
   const [formsViewMode, setFormsViewMode] = useState<"visibility" | "builder">("visibility");
+  const [editingFormTemplate, setEditingFormTemplate] = useState<any | null>(null);
 
   // Custom Roles State
   const [showRoleModal, setShowRoleModal] = useState(false);
@@ -1802,25 +1803,52 @@ export default function AdminManager({
             {formsViewMode === "visibility" ? (
               <FormsVisibilityManager
                 locations={locations}
-                onOpenBuilder={() => setFormsViewMode("builder")}
+                departments={departments}
+                onOpenBuilder={() => {
+                  setEditingFormTemplate(null);
+                  setFormsViewMode("builder");
+                }}
+                onEditTemplate={(template) => {
+                  setEditingFormTemplate(template);
+                  setFormsViewMode("builder");
+                }}
               />
             ) : (
               <div className="space-y-4">
                 <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                   <button
                     type="button"
-                    onClick={() => setFormsViewMode("visibility")}
+                    onClick={() => {
+                      setEditingFormTemplate(null);
+                      setFormsViewMode("visibility");
+                    }}
                     className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs rounded-xl transition-all"
                   >
                     <span>← العودة لإدارة وتوزيع الاستمارات</span>
                   </button>
-                  <span className="text-xs font-black text-[#682722]">تصميم استمارة جديدة مخصصة</span>
+                  <span className="text-xs font-black text-[#682722]">
+                    {editingFormTemplate ? `تعديل الاستمارة: ${editingFormTemplate.title}` : "تصميم استمارة جديدة مخصصة"}
+                  </span>
                 </div>
                 <FormBuilder
+                  initialTemplate={editingFormTemplate}
                   departments={departments}
                   roles={roles}
                   users={users}
-                  onFormCreated={() => setFormsViewMode("visibility")}
+                  onFormCreated={() => {
+                    setEditingFormTemplate(null);
+                    setFormsViewMode("visibility");
+                    showNotification("success", "تم إنشاء الاستمارة بنجاح!");
+                  }}
+                  onFormUpdated={() => {
+                    setEditingFormTemplate(null);
+                    setFormsViewMode("visibility");
+                    showNotification("success", "تم تحديث وحفظ تعديلات الاستمارة بنجاح!");
+                  }}
+                  onCancel={() => {
+                    setEditingFormTemplate(null);
+                    setFormsViewMode("visibility");
+                  }}
                 />
               </div>
             )}

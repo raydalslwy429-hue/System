@@ -19,29 +19,56 @@ import {
   Plus,
   RefreshCw,
   ExternalLink,
+  UploadCloud,
+  Edit3,
+  Trash2,
+  Table,
+  Download,
+  X,
+  FileText,
 } from "lucide-react";
 import { FormTemplate } from "@/types/dynamic-forms";
 import {
   getDynamicTemplatesAction,
   updateTemplateAllowedRolesAction,
   exportDynamicFormToExcelAction,
+  importKoboXLSFormAction,
+  deleteDynamicTemplateAction,
+  getTemplateSubmissionsAction,
 } from "@/app/actions/dynamic-forms";
 import DynamicFormRenderer from "@/components/DynamicFormRenderer";
 
 interface FormsVisibilityManagerProps {
   locations?: Array<{ code: string; name: string }>;
+  departments?: Array<{ code: string; name: string }>;
   onOpenBuilder?: () => void;
+  onEditTemplate?: (template: FormTemplate) => void;
 }
 
 export default function FormsVisibilityManager({
   locations = [],
+  departments = [],
   onOpenBuilder,
+  onEditTemplate,
 }: FormsVisibilityManagerProps) {
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [previewTemplate, setPreviewTemplate] = useState<FormTemplate | null>(null);
+
+  // Import Modal States
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importTitle, setImportTitle] = useState("");
+  const [importRoles, setImportRoles] = useState("all");
+  const [importDept, setImportDept] = useState("all");
+  const [importing, setImporting] = useState(false);
+
+  // Submissions Modal States
+  const [selectedSubmissionsTemplate, setSelectedSubmissionsTemplate] = useState<FormTemplate | null>(null);
+  const [submissions, setSubmissions] = useState<any[]>([]);
+  const [loadingSubmissions, setLoadingSubmissions] = useState(false);
 
   const fetchTemplates = async () => {
     setLoading(true);
@@ -50,7 +77,7 @@ export default function FormsVisibilityManager({
       if (res.success && res.templates) {
         setTemplates(res.templates);
       }
-    } catch (err: any) {
+    } catch {
       setMessage({ type: "error", text: "تعذر تحميل النماذج والاستمارات" });
     } finally {
       setLoading(false);
@@ -73,7 +100,6 @@ export default function FormsVisibilityManager({
     let newRoles: string[];
 
     if (role === "all") {
-      // Toggle 'all'
       if (template.allowed_roles === "all") {
         newRoles = ["admin", "super_admin"];
       } else {
@@ -81,7 +107,6 @@ export default function FormsVisibilityManager({
       }
     } else {
       if (template.allowed_roles === "all") {
-        // Was all, user clicked a specific role to restrict
         newRoles = ["inspector", "field_agent", "admin"].filter((r) => r !== role);
       } else {
         if (currentRoles.includes(role)) {
@@ -100,27 +125,27 @@ export default function FormsVisibilityManager({
       }
     }
 
-    const finalAllowedRoles = newRoles.join(",");
+    const rolesString = newRoles.join(",");
 
     try {
       const res = await updateTemplateAllowedRolesAction({
         templateId: template.id,
-        allowedRoles: finalAllowedRoles,
+        allowedRoles: rolesString,
       });
 
       if (res.success) {
         setTemplates((prev) =>
-          prev.map((t) => (t.id === template.id ? { ...t, allowed_roles: finalAllowedRoles } : t))
+          prev.map((t) => (t.id === template.id ? { ...t, allowed_roles: rolesString } : t))
         );
         setMessage({
           type: "success",
-          text: `تم تحديث صلاحية عرض (${template.title}) بنجاح!`,
+          text: `تم تحديث صلاحيات ظهور نموذج (${template.title}) بنجاح`,
         });
       } else {
-        setMessage({ type: "error", text: res.error || "تعذر حفظ التعديلات" });
+        setMessage({ type: "error", text: res.error || "فشل تحديث الصلاحيات" });
       }
     } catch {
-      setMessage({ type: "error", text: "حدث خطأ في الاتصال بالخادم" });
+      setMessage({ type: "error", text: "حدث خطأ غير متوقع أثناء التحديث" });
     } finally {
       setUpdatingId(null);
     }
@@ -144,13 +169,13 @@ export default function FormsVisibilityManager({
         );
         setMessage({
           type: "success",
-          text: `تم ${newStatus === "active" ? "تفعيل" : "إيقاف"} الاستمارة (${template.title}) بنجاح.`,
+          text: `تم ${newStatus === "active" ? "تفعيل" : "تعطيل"} نموذج (${template.title}) بنجاح`,
         });
       } else {
-        setMessage({ type: "error", text: res.error || "تعذر تغيير حالة الاستمارة" });
+        setMessage({ type: "error", text: res.error || "فشل تغيير الحالة" });
       }
     } catch {
-      setMessage({ type: "error", text: "فشل تغيير الحالة" });
+      setMessage({ type: "error", text: "حدث خطأ غير متوقع أثناء تغيير الحالة" });
     } finally {
       setUpdatingId(null);
     }
@@ -160,62 +185,174 @@ export default function FormsVisibilityManager({
     try {
       const res = await exportDynamicFormToExcelAction(templateId);
       if (res.success && res.rows) {
-        const jsonStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(res.rows, null, 2));
+        // Download generated data as CSV/Excel compatible file
+        const cols = res.columns || [];
+        const rows = res.rows || [];
+        const header = cols.map((c) => `"${c.header}"`).join(",");
+        const body = rows
+          .map((r) => cols.map((c) => `"${String(r[c.key] || "").replace(/"/g, '""')}"`).join(","))
+          .join("\n");
+        const csvContent = "\uFEFF" + header + "\n" + body;
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.setAttribute("href", jsonStr);
-        a.setAttribute("download", `استمارة_${templateId}_بيانات.json`);
-        document.body.appendChild(a);
+        a.href = url;
+        a.download = `${res.sheetName || "form_responses"}_${Date.now()}.csv`;
         a.click();
-        a.remove();
-        setMessage({ type: "success", text: "تم تصدير سجل الاستجابات بنجاح." });
+        URL.revokeObjectURL(url);
+        setMessage({ type: "success", text: `تم بنجاح تصدير سجل استجابات الاستمارة!` });
       } else {
-        setMessage({ type: "error", text: res.error || "لا توجد استجابات مسجلة بعد" });
+        setMessage({ type: "error", text: res.error || "لا توجد استجابات مسجلة لهذه الاستمارة بعد" });
       }
-    } catch {
-      setMessage({ type: "error", text: "تعذر تصدير البيانات" });
+    } catch (err: any) {
+      setMessage({ type: "error", text: `فشل التصدير: ${err?.message || "خطأ غير متوقع"}` });
     }
   };
 
-  const isRoleActive = (allowedRoles: string, role: string) => {
-    if (allowedRoles === "all") return true;
-    const list = allowedRoles.split(",").map((r) => r.trim());
+  // Import Kobo XLSForm Handler
+  const handleImportSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!importFile) {
+      setMessage({ type: "error", text: "يرجى اختيار ملف إكسيل (.xlsx أو .xls) للاستيراد" });
+      return;
+    }
+
+    setImporting(true);
+    setMessage(null);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64Data = (reader.result as string).split(",")[1];
+        const res = await importKoboXLSFormAction({
+          base64Data,
+          filename: importFile.name,
+          customTitle: importTitle.trim() || undefined,
+          allowedRoles: importRoles,
+          departmentCode: importDept,
+        });
+
+        if (res.success) {
+          setMessage({
+            type: "success",
+            text: `🎉 تم بنجاح استيراد استمارة (${res.title}) بعدد (${res.questionsCount}) أسئلة و(${res.stepsCount}) مراحل!`,
+          });
+          setShowImportModal(false);
+          setImportFile(null);
+          setImportTitle("");
+          fetchTemplates();
+        } else {
+          setMessage({ type: "error", text: res.error || "فشل استيراد الاستمارة" });
+        }
+        setImporting(false);
+      };
+
+      reader.onerror = () => {
+        setMessage({ type: "error", text: "تعذر قراءة ملف الإكسيل" });
+        setImporting(false);
+      };
+
+      reader.readAsDataURL(importFile);
+    } catch (err: any) {
+      setMessage({ type: "error", text: err?.message || "حدث خطأ غير متوقع أثناء الرفع" });
+      setImporting(false);
+    }
+  };
+
+  // Delete Template Handler
+  const handleDeleteTemplate = async (template: FormTemplate) => {
+    if (!confirm(`هل أنت متأكد من حذف الاستمارة (${template.title}) وكافة أسئلتها؟ لا يمكن التراجع عن هذا الإجراء.`)) {
+      return;
+    }
+
+    setUpdatingId(template.id);
+    try {
+      const res = await deleteDynamicTemplateAction(template.id);
+      if (res.success) {
+        setTemplates((prev) => prev.filter((t) => t.id !== template.id));
+        setMessage({ type: "success", text: `تم حذف الاستمارة (${template.title}) بنجاح` });
+      } else {
+        setMessage({ type: "error", text: res.error || "فشل حذف الاستمارة" });
+      }
+    } catch {
+      setMessage({ type: "error", text: "حدث خطأ غير متوقع أثناء الحذف" });
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  // Open Submissions Table Modal
+  const handleOpenSubmissions = async (template: FormTemplate) => {
+    setSelectedSubmissionsTemplate(template);
+    setLoadingSubmissions(true);
+    try {
+      const res = await getTemplateSubmissionsAction(template.id);
+      if (res.success && res.submissions) {
+        setSubmissions(res.submissions);
+      } else {
+        setSubmissions([]);
+      }
+    } catch {
+      setSubmissions([]);
+    } finally {
+      setLoadingSubmissions(false);
+    }
+  };
+
+  const isRoleActive = (rolesStr: string, role: string) => {
+    if (!rolesStr || rolesStr === "all") return true;
+    const list = rolesStr.split(",").map((r) => r.trim());
     return list.includes(role);
   };
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
+      {/* Top Banner Header */}
       <div className="bg-gradient-to-l from-[#1B1111] via-[#2A1C16] to-[#1B1111] text-white p-6 rounded-3xl border-2 border-[#D49A3D]/40 shadow-xl relative overflow-hidden flex flex-wrap items-center justify-between gap-4">
         <div className="absolute top-0 right-0 w-64 h-64 bg-[#FFC217]/10 rounded-full blur-3xl pointer-events-none"></div>
 
         <div className="relative z-10 flex items-center gap-3">
           <span className="p-3 bg-[#D49A3D] text-[#1B1111] rounded-2xl shadow-md">
-            <Sparkles className="w-7 h-7" />
+            <Sparkles className="w-6 h-6" />
           </span>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-xl font-black text-white">إدارة وتوزيع الاستمارات الذكية</h2>
+              <h2 className="text-xl font-black text-white">إدارة وتوزيع الاستمارات الذكية (Kobo Forms)</h2>
               <span className="text-[10px] bg-[#682722] text-amber-100 font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
                 التحكم المركزي
               </span>
             </div>
             <p className="text-xs font-semibold text-amber-200/80 mt-1">
-              أزرار تحكم مباشرة لتحديد من يحق له رؤية وتعبئة كل استمارة (المفتشين، المنفذين، الإداريين، أو الجميع).
+              تحكم كامل في توزيع الاستمارات، استيراد نماذج Kobo XLSForm، تعديل الأسئلة، واستعراض سجل الإرسالات.
             </p>
           </div>
         </div>
 
-        <div className="relative z-10 flex items-center gap-2">
+        <div className="relative z-10 flex flex-wrap items-center gap-2">
+          {/* 📥 زر استيراد من إكسل (XLSForm / Kobo) */}
+          <button
+            type="button"
+            onClick={() => setShowImportModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-[#FAF7F4] hover:bg-white text-[#682722] font-black text-xs rounded-xl border border-amber-300 shadow-md transition-all active:scale-95"
+          >
+            <UploadCloud className="w-4 h-4 text-[#D49A3D]" />
+            <span>استيراد استمارة من إكسيل (XLSForm) 📥</span>
+          </button>
+
+          {/* ➕ زر إنشاء استمارة مخصصة */}
           {onOpenBuilder && (
             <button
+              type="button"
               onClick={onOpenBuilder}
               className="flex items-center gap-2 px-4 py-2.5 bg-[#FFC217] hover:bg-[#D49A3D] text-[#1B1111] font-black text-xs rounded-xl shadow-md transition-all active:scale-95"
             >
               <Plus className="w-4 h-4" />
-              <span>إنشاء نموذج جديد مخصص</span>
+              <span>تصميم استمارة جديدة</span>
             </button>
           )}
+
           <button
+            type="button"
             onClick={fetchTemplates}
             disabled={loading}
             className="p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
@@ -250,6 +387,7 @@ export default function FormsVisibilityManager({
         <div className="bg-white rounded-3xl p-16 text-center border border-slate-200">
           <Layers className="w-12 h-12 text-slate-300 mx-auto mb-3" />
           <p className="text-base font-black text-slate-700">لا توجد استمارات مسجلة حالياً</p>
+          <p className="text-xs text-slate-400 mt-1">يمكنك استيراد استمارة من ملف إكسيل XLSForm أو تصميم استمارة جديدة</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6">
@@ -310,7 +448,7 @@ export default function FormsVisibilityManager({
                     </div>
                   </div>
 
-                  {/* Role Control Buttons (The core requirement) */}
+                  {/* Role Control Buttons & Operational Actions */}
                   <div className="flex flex-col gap-3 min-w-[280px]">
                     <div className="text-[11px] font-black text-slate-500 flex items-center justify-between">
                       <span>أزرار تحديد الصلاحيات والعرض المباشر:</span>
@@ -395,39 +533,77 @@ export default function FormsVisibilityManager({
                       </button>
                     </div>
 
-                    {/* Operational Actions */}
-                    <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                    {/* Operational Actions Bar */}
+                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+                      {/* ✏️ زر تعديل الاستمارة */}
+                      {onEditTemplate && (
+                        <button
+                          type="button"
+                          onClick={() => onEditTemplate(template)}
+                          className="py-1.5 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-black flex items-center gap-1 transition-colors"
+                          title="تعديل نصوص وحقول الاستمارة"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+                          <span>تعديل ✏️</span>
+                        </button>
+                      )}
+
+                      {/* 📊 زر استعراض الإرسالات */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSubmissions(template)}
+                        className="py-1.5 px-3 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-xl text-xs font-black flex items-center gap-1 transition-colors"
+                        title="استعراض جدول الإرسالات والإجابات"
+                      >
+                        <Table className="w-3.5 h-3.5 text-purple-600" />
+                        <span>الإرسالات 📊</span>
+                      </button>
+
+                      {/* 👁️ زر معاينة وتجربة النموذج */}
                       <button
                         type="button"
                         onClick={() => setPreviewTemplate(template)}
                         className="flex-1 py-1.5 px-3 bg-amber-50 hover:bg-amber-100 text-[#682722] border border-amber-200 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-colors"
                       >
                         <Eye className="w-3.5 h-3.5" />
-                        <span>معاينة وتعبئة النموذج</span>
+                        <span>معاينة وتعبئة</span>
                       </button>
 
+                      {/* 📥 زر تصدير إكسيل */}
                       <button
                         type="button"
                         onClick={() => handleExport(template.id)}
                         className="py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors"
-                        title="تصدير الاستجابات"
+                        title="تصدير الاستجابات إلى إكسيل"
                       >
                         <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
                         <span>تصدير</span>
                       </button>
 
+                      {/* تفعيل / إيقاف */}
                       <button
                         type="button"
                         disabled={isBusy}
                         onClick={() => handleToggleStatus(template)}
                         className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-colors ${
                           isActive
-                            ? "bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200"
+                            ? "bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200"
                             : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200"
                         }`}
                         title={isActive ? "تعطيل مؤقت" : "إعادة التفعيل"}
                       >
                         {isActive ? "إيقاف" : "تفعيل"}
+                      </button>
+
+                      {/* 🗑️ زر حذف الاستمارة */}
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => handleDeleteTemplate(template)}
+                        className="py-1.5 px-2 bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-xl text-xs font-bold transition-colors"
+                        title="حذف الاستمارة نهائياً"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
@@ -438,7 +614,229 @@ export default function FormsVisibilityManager({
         </div>
       )}
 
-      {/* Preview Modal */}
+      {/* 📥 MODAL 1: IMPORT KOBO XLSFORM (نافذة استيراد استمارة من إكسيل) */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1B1111]/70 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 space-y-5 shadow-2xl border-2 border-[#D49A3D]/40 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="p-2 bg-amber-100 text-[#682722] rounded-xl">
+                  <UploadCloud className="w-5 h-5 text-[#D49A3D]" />
+                </span>
+                <div>
+                  <h3 className="font-black text-sm text-[#1B1111]">استيراد استمارة Kobo (Excel XLSForm)</h3>
+                  <p className="text-[11px] text-slate-400 font-semibold">يدعم صيغ XLSForm القياسية (survey, choices, settings)</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowImportModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleImportSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-black text-slate-700 mb-1.5">
+                  📁 اختر ملف الإكسيل (.xlsx أو .xls) <span className="text-rose-600">*</span>
+                </label>
+                <input
+                  type="file"
+                  accept=".xlsx, .xls"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) setImportFile(f);
+                  }}
+                  className="w-full text-xs text-slate-700 file:mr-0 file:ml-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-[#1B1111] file:text-[#FFC217] hover:file:bg-[#2A1C16] border border-dashed border-amber-300 rounded-2xl p-4 bg-amber-50/30 cursor-pointer"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-700 mb-1.5">
+                  عنوان الاستمارة (اختياري - سيُستخرج تلقائياً من الملف إذا تُرِك فارغاً):
+                </label>
+                <input
+                  type="text"
+                  value={importTitle}
+                  onChange={(e) => setImportTitle(e.target.value)}
+                  placeholder="مثال: استمارة التفتيش والرقابة على الصالات..."
+                  className="w-full h-11 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-black text-slate-700 mb-1.5">نطاق الظهور الافتراضي:</label>
+                  <select
+                    value={importRoles}
+                    onChange={(e) => setImportRoles(e.target.value)}
+                    className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                  >
+                    <option value="all">متاح للجميع (all)</option>
+                    <option value="inspector,admin,super_admin">المفتشين والإدارة فقط</option>
+                    <option value="field_agent,admin,super_admin">المنفذين والإدارة فقط</option>
+                    <option value="admin,super_admin">الإدارة فقط</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black text-slate-700 mb-1.5">نطاق الإدارة:</label>
+                  <select
+                    value={importDept}
+                    onChange={(e) => setImportDept(e.target.value)}
+                    className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                  >
+                    <option value="all">كافة الإدارات</option>
+                    {departments.map((d) => (
+                      <option key={d.code} value={d.code}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowImportModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 rounded-xl"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={importing || !importFile}
+                  className="px-5 py-2.5 bg-gradient-to-r from-amber-600 to-[#FFC217] hover:brightness-105 text-[#1B1111] font-black rounded-xl text-xs shadow-md flex items-center gap-2 disabled:opacity-50"
+                >
+                  {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
+                  <span>{importing ? "جارٍ قراءة وبناء الاستمارة..." : "بدء الاستيراد الفوري"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 📊 MODAL 2: SUBMISSIONS TABLE (نافذة استعراض جدول الإرسالات والإجابات) */}
+      {selectedSubmissionsTemplate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-[#1B1111]/80 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border-2 border-[#D49A3D]/40">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-l from-[#1B1111] via-[#2A1C16] to-[#1B1111] p-5 text-white flex items-center justify-between border-b border-[#D49A3D]/30">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-[#D49A3D] text-[#1B1111] rounded-2xl shadow-sm">
+                  <Table className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm sm:text-base text-white">
+                    سجل الإرسالات والردود: {selectedSubmissionsTemplate.title}
+                  </h3>
+                  <p className="text-xs text-amber-200/80 font-semibold mt-0.5">
+                    إجمالي الإرسالات المسجلة: ({submissions.length}) استجابة
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleExport(selectedSubmissionsTemplate.id)}
+                  className="px-3.5 py-1.5 bg-[#FFC217] text-[#1B1111] rounded-xl text-xs font-black flex items-center gap-1.5 hover:bg-amber-400 transition-all shadow-sm"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>تصدير إكسيل</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSubmissionsTemplate(null)}
+                  className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-xl transition-all"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Submissions Content */}
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
+              {loadingSubmissions ? (
+                <div className="py-16 text-center">
+                  <Loader2 className="w-8 h-8 animate-spin text-[#D49A3D] mx-auto mb-2" />
+                  <p className="text-xs font-black text-slate-500">جارٍ تحميل سجل الإرسالات...</p>
+                </div>
+              ) : submissions.length === 0 ? (
+                <div className="py-16 text-center space-y-2">
+                  <FileText className="w-12 h-12 text-slate-300 mx-auto" />
+                  <h4 className="text-sm font-black text-slate-700">لا توجد إرسالات مسجلة لهذه الاستمارة حتى الآن</h4>
+                  <p className="text-xs text-slate-400">ستظهر هنا تفاصيل التعبئة فور قيام المفتشين أو المنفذين بإرسالها من الميدان.</p>
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-2xl overflow-x-auto">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-[#FAF7F4] text-[#1B1111] font-black border-b border-slate-200">
+                      <tr>
+                        <th className="p-3">#</th>
+                        <th className="p-3">مقدم التقرير</th>
+                        <th className="p-3">الدور</th>
+                        <th className="p-3">الموقع / القسم</th>
+                        <th className="p-3">تاريخ ووقت الإرسال</th>
+                        <th className="p-3">الحالة</th>
+                        <th className="p-3">الإجابات والنتائج</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {submissions.map((sub, idx) => (
+                        <tr key={sub.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="p-3 font-mono font-black text-slate-400">#{sub.response_number || idx + 1}</td>
+                          <td className="p-3 font-black text-slate-900">{sub.user_name}</td>
+                          <td className="p-3 text-slate-600">{sub.user_role}</td>
+                          <td className="p-3 font-bold text-slate-700">{sub.location_name}</td>
+                          <td className="p-3 text-slate-500 font-mono text-[11px]">{sub.created_at}</td>
+                          <td className="p-3">
+                            <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md font-bold text-[10px]">
+                              {sub.status === "completed" ? "مكتمل ومعتمد" : sub.status}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <div className="max-w-md space-y-1">
+                              {sub.answers?.slice(0, 3).map((ans: any, aIdx: number) => (
+                                <div key={aIdx} className="text-[11px] text-slate-700 truncate">
+                                  <span className="font-bold text-slate-500">{ans.question_text}:</span>{" "}
+                                  <span className="font-black text-[#1B1111]">{ans.answer_value}</span>
+                                </div>
+                              ))}
+                              {sub.answers?.length > 3 && (
+                                <span className="text-[10px] text-[#682722] font-black">
+                                  + ({sub.answers.length - 3}) إجابات إضافية (متاحة في ملف الإكسيل المصدّر)
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedSubmissionsTemplate(null)}
+                className="px-5 py-2 bg-[#1B1111] hover:bg-[#682722] text-white font-black text-xs rounded-xl shadow-sm transition-all"
+              >
+                إغلاق النافذة
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 👁️ MODAL 3: PREVIEW & TEST FORM MODAL */}
       {previewTemplate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-6 shadow-2xl relative border-2 border-[#D49A3D]">
@@ -458,11 +856,15 @@ export default function FormsVisibilityManager({
 
             <DynamicFormRenderer
               template={previewTemplate}
-              locations={locations.length > 0 ? locations : [
-                { code: "hall_marasim", name: "صالة المراسيم" },
-                { code: "hall_families", name: "صالة العائلات" },
-                { code: "hall_caltex", name: "صالة كالتكس" }
-              ]}
+              locations={
+                locations.length > 0
+                  ? locations
+                  : [
+                      { code: "hall_marasim", name: "صالة المراسيم" },
+                      { code: "hall_families", name: "صالة العائلات" },
+                      { code: "hall_caltex", name: "صالة كالتكس" },
+                    ]
+              }
               onSuccess={() => {
                 setMessage({ type: "success", text: "تم تسجيل وتجربة الاستمارة بنجاح!" });
                 setPreviewTemplate(null);

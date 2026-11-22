@@ -23,8 +23,8 @@ import {
   Save,
   Sliders,
 } from "lucide-react";
-import { FormQuestion, FieldType } from "@/types/dynamic-forms";
-import { createDynamicTemplateAction } from "@/app/actions/dynamic-forms";
+import { FormQuestion, FieldType, FormTemplate } from "@/types/dynamic-forms";
+import { createDynamicTemplateAction, updateDynamicTemplateAction } from "@/app/actions/dynamic-forms";
 
 const FIELD_TYPES: Array<{ type: FieldType; label: string; icon: any }> = [
   { type: "text", label: "نص قصير (Text)", icon: Type },
@@ -40,65 +40,81 @@ const FIELD_TYPES: Array<{ type: FieldType; label: string; icon: any }> = [
 ];
 
 export default function FormBuilder({
+  initialTemplate,
   onFormCreated,
+  onFormUpdated,
+  onCancel,
   departments = [],
   roles = [],
   users = [],
 }: {
+  initialTemplate?: FormTemplate | null;
   onFormCreated?: (templateId: number) => void;
+  onFormUpdated?: (templateId: number) => void;
+  onCancel?: () => void;
   departments?: any[];
   roles?: any[];
   users?: any[];
 }) {
-  const [formTitle, setFormTitle] = useState("");
-  const [formCode, setFormCode] = useState("");
-  const [formDesc, setFormDesc] = useState("");
-  const [allowedRoles, setAllowedRoles] = useState("all");
+  const isEditMode = Boolean(initialTemplate?.id);
+
+  const [formTitle, setFormTitle] = useState(initialTemplate?.title || "");
+  const [formCode, setFormCode] = useState(initialTemplate?.code || "");
+  const [formDesc, setFormDesc] = useState(initialTemplate?.description || "");
+  const [allowedRoles, setAllowedRoles] = useState(initialTemplate?.allowed_roles || "all");
   const [allowedUsersAll, setAllowedUsersAll] = useState(true);
   const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
-  const [stepsCount, setStepsCount] = useState(3);
+  const [stepsCount, setStepsCount] = useState(
+    initialTemplate?.questions && initialTemplate.questions.length > 0
+      ? Math.max(1, ...initialTemplate.questions.map((q) => q.step_number || 1))
+      : 3
+  );
   const [activeTab, setActiveTab] = useState<"builder" | "preview">("builder");
 
-  const [questions, setQuestions] = useState<FormQuestion[]>([
-    {
-      id: 1,
-      template_id: 0,
-      question_code: "q_1",
-      question_text: "الموقع أو القسم الخاضع للفحص",
-      field_type: "select",
-      is_required: true,
-      options: ["قسم اللحوم", "قسم المشويات", "قسم الخضار", "المطبخ المركزي"],
-      step_number: 1,
-      order_index: 1,
-      help_text: "حدد القسم بدقة",
-    },
-    {
-      id: 2,
-      template_id: 0,
-      question_code: "q_2",
-      question_text: "هل توجد مخالفة في النظافة والتعقيم؟",
-      field_type: "radio",
-      is_required: true,
-      options: ["مطابق", "غير مطابق - توجد مخالفة"],
-      step_number: 2,
-      order_index: 2,
-    },
-    {
-      id: 3,
-      template_id: 0,
-      question_code: "q_3",
-      question_text: "صورة توثيقية للمخالفة من الكاميرا",
-      field_type: "image",
-      is_required: false,
-      conditional_logic: {
-        dependsOnCode: "q_2",
-        equals: "غير مطابق - توجد مخالفة",
-      },
-      step_number: 2,
-      order_index: 3,
-      help_text: "التقط صورة واضحة لحالة عدم المطابقة",
-    },
-  ]);
+  const [questions, setQuestions] = useState<FormQuestion[]>(
+    initialTemplate?.questions && initialTemplate.questions.length > 0
+      ? initialTemplate.questions
+      : [
+          {
+            id: 1,
+            template_id: 0,
+            question_code: "q_1",
+            question_text: "الموقع أو القسم الخاضع للفحص",
+            field_type: "select",
+            is_required: true,
+            options: ["قسم اللحوم", "قسم المشويات", "قسم الخضار", "المطبخ المركزي"],
+            step_number: 1,
+            order_index: 1,
+            help_text: "حدد القسم بدقة",
+          },
+          {
+            id: 2,
+            template_id: 0,
+            question_code: "q_2",
+            question_text: "هل توجد مخالفة في النظافة والتعقيم؟",
+            field_type: "radio",
+            is_required: true,
+            options: ["مطابق", "غير مطابق - توجد مخالفة"],
+            step_number: 2,
+            order_index: 2,
+          },
+          {
+            id: 3,
+            template_id: 0,
+            question_code: "q_3",
+            question_text: "صورة توثيقية للمخالفة من الكاميرا",
+            field_type: "image",
+            is_required: false,
+            conditional_logic: {
+              dependsOnCode: "q_2",
+              equals: "غير مطابق - توجد مخالفة",
+            },
+            step_number: 2,
+            order_index: 3,
+            help_text: "التقط صورة واضحة لحالة عدم المطابقة",
+          },
+        ]
+  );
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -153,33 +169,67 @@ export default function FormBuilder({
     setMessage(null);
 
     try {
-      const res = await createDynamicTemplateAction({
-        code: codeToUse,
-        title: formTitle,
-        description: formDesc,
-        allowed_roles: allowedRoles,
-        allowed_users_json: allowedUsersAll || selectedUserIds.length === 0 ? "all" : JSON.stringify(selectedUserIds),
-        questions: questions.map((q, idx) => ({
-          question_code: q.question_code || `q_${idx + 1}`,
-          question_text: q.question_text,
-          field_type: q.field_type,
-          is_required: Boolean(q.is_required),
-          options: q.options,
-          conditional_logic: q.conditional_logic,
-          step_number: q.step_number || 1,
-          order_index: idx + 1,
-          help_text: q.help_text,
-        })),
-      });
-
-      if (res.success && res.templateId) {
-        setMessage({
-          type: "success",
-          text: `🎉 تم حفظ وتفعيل الاستمارة الديناميكية (${formTitle}) بنجاح!`,
+      if (isEditMode && initialTemplate?.id) {
+        // Edit Mode
+        const res = await updateDynamicTemplateAction({
+          templateId: initialTemplate.id,
+          title: formTitle,
+          description: formDesc,
+          allowedRoles: allowedRoles,
+          questions: questions.map((q, idx) => ({
+            id: q.id,
+            question_code: q.question_code || `q_${idx + 1}`,
+            question_text: q.question_text,
+            field_type: q.field_type,
+            is_required: Boolean(q.is_required),
+            options: q.options,
+            conditional_logic: q.conditional_logic,
+            step_number: q.step_number || 1,
+            order_index: idx + 1,
+            help_text: q.help_text,
+            placeholder: q.placeholder,
+          })),
         });
-        if (onFormCreated) onFormCreated(res.templateId);
+
+        if (res.success) {
+          setMessage({
+            type: "success",
+            text: `🎉 تم تحديث وحفظ تعديلات الاستمارة (${formTitle}) بنجاح!`,
+          });
+          if (onFormUpdated) onFormUpdated(initialTemplate.id);
+        } else {
+          setMessage({ type: "error", text: res.error || "فشل تحديث الاستمارة" });
+        }
       } else {
-        setMessage({ type: "error", text: res.error || "فشل حفظ الاستمارة" });
+        // Create Mode
+        const res = await createDynamicTemplateAction({
+          code: codeToUse,
+          title: formTitle,
+          description: formDesc,
+          allowed_roles: allowedRoles,
+          allowed_users_json: allowedUsersAll || selectedUserIds.length === 0 ? "all" : JSON.stringify(selectedUserIds),
+          questions: questions.map((q, idx) => ({
+            question_code: q.question_code || `q_${idx + 1}`,
+            question_text: q.question_text,
+            field_type: q.field_type,
+            is_required: Boolean(q.is_required),
+            options: q.options,
+            conditional_logic: q.conditional_logic,
+            step_number: q.step_number || 1,
+            order_index: idx + 1,
+            help_text: q.help_text,
+          })),
+        });
+
+        if (res.success && res.templateId) {
+          setMessage({
+            type: "success",
+            text: `🎉 تم حفظ وتفعيل الاستمارة الديناميكية (${formTitle}) بنجاح!`,
+          });
+          if (onFormCreated) onFormCreated(res.templateId);
+        } else {
+          setMessage({ type: "error", text: res.error || "فشل حفظ الاستمارة" });
+        }
       }
     } catch (err: any) {
       setMessage({ type: "error", text: err.message || "حدث خطأ غير متوقع" });
@@ -194,17 +244,30 @@ export default function FormBuilder({
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-5">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-lg font-black text-[#1B1111]">منشئ الاستمارات الذكية الديناميكي</h3>
+            <h3 className="text-lg font-black text-[#1B1111]">
+              {isEditMode ? `تعديل الاستمارة: ${initialTemplate?.title || formTitle}` : "منشئ الاستمارات الذكية الديناميكي"}
+            </h3>
             <span className="text-[10px] font-black bg-[#682722] text-amber-100 px-2.5 py-0.5 rounded-full border border-amber-500/30">
-              محرك النماذج المتطورة
+              {isEditMode ? "وضع التعديل ✏️" : "نموذج جديد ➕"}
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            صمم استمارات التفتيش والرصد الميداني متعدّدة المراحل مع المنطق الشرطي وتحديد الأدوار والمستخدمين المصرح لهم.
+            {isEditMode
+              ? "يمكنك تعديل نصوص الأسئلة، الخيارات، أنواع الحقول، والترتيب ثم حفظ التعديلات مباشرة."
+              : "صمم استمارات التفتيش والرصد الميداني متعدّدة المراحل مع المنطق الشرطي وتحديد الأدوار والمستخدمين المصرح لهم."}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-4 py-2 rounded-xl text-xs font-black bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all"
+            >
+              إلغاء وعودة
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setActiveTab("builder")}
@@ -236,7 +299,7 @@ export default function FormBuilder({
             className="px-5 py-2 bg-gradient-to-r from-amber-500 to-[#FFC217] hover:brightness-105 text-[#1B1111] font-black rounded-xl text-xs flex items-center gap-1.5 shadow-md disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
-            <span>{saving ? "جار الحفظ..." : "حفظ ونشر الاستمارة"}</span>
+            <span>{saving ? "جار الحفظ..." : isEditMode ? "حفظ التعديلات 💾" : "حفظ ونشر الاستمارة"}</span>
           </button>
         </div>
       </div>
