@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { getUserEffectivePermissions } from "@/app/actions/capa";
 import { parseKoboXLSForm } from "@/lib/kobo-parser";
+import * as XLSX from "xlsx";
 import {
   FormTemplate,
   FormQuestion,
@@ -85,6 +86,7 @@ export async function getDynamicTemplatesAction(userRole?: string) {
       version: Number(row.version || 1),
       allowed_roles: allowed,
       department_code: row.department_code ? String(row.department_code) : undefined,
+      fields_schema: row.fields_schema ? String(row.fields_schema) : undefined,
       status: String(row.status) as any,
       questions,
     });
@@ -755,6 +757,8 @@ export async function importKoboXLSFormAction(data: {
   customTitle?: string;
   allowedRoles?: string;
   departmentCode?: string;
+  mediaBase64Data?: string;
+  mediaFilename?: string;
 }) {
   const session = await getSession();
   if (!session || !(await hasFeaturePermission(session, "manage_forms"))) {
@@ -769,6 +773,21 @@ export async function importKoboXLSFormAction(data: {
       return { success: false, error: "لم يتم العثور على أي أسئلة صالحة في ملف الإكسيل المرفوع" };
     }
 
+    // Parse media file (employees / lookup items) if provided
+    let lookupRows: any[] = [];
+    if (data.mediaBase64Data) {
+      try {
+        const mediaBuffer = Buffer.from(data.mediaBase64Data, "base64");
+        const mediaWb = XLSX.read(mediaBuffer, { type: "buffer" });
+        const firstSheet = mediaWb.SheetNames[0];
+        if (firstSheet) {
+          lookupRows = XLSX.utils.sheet_to_json<Record<string, any>>(mediaWb.Sheets[firstSheet]);
+        }
+      } catch (e: any) {
+        console.error("Failed to parse media lookup file:", e);
+      }
+    }
+
     const title = data.customTitle?.trim() || parsed.title;
     let code = parsed.code.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
     if (!code || code === "kobo") code = `kobo_${Date.now()}`;
@@ -779,9 +798,13 @@ export async function importKoboXLSFormAction(data: {
       code = `${code}_${Date.now().toString().slice(-4)}`;
     }
 
+    const fieldsSchema = lookupRows.length > 0
+      ? JSON.stringify({ media_filename: data.mediaFilename || "media.xlsx", lookup_data: lookupRows })
+      : null;
+
     const tRes = await db.execute({
-      sql: `INSERT INTO forms_templates (code, title, description, allowed_roles, department_code, allowed_users_json, version, status)
-            VALUES (?, ?, ?, ?, ?, 'all', 1, 'active')
+      sql: `INSERT INTO forms_templates (code, title, description, allowed_roles, department_code, allowed_users_json, version, status, fields_schema)
+            VALUES (?, ?, ?, ?, ?, 'all', 1, 'active', ?)
             RETURNING id;`,
       args: [
         code,
@@ -789,6 +812,7 @@ export async function importKoboXLSFormAction(data: {
         parsed.description || `استمارة مستوردة من ملف Kobo: ${data.filename}`,
         data.allowedRoles || "all",
         data.departmentCode || "all",
+        fieldsSchema,
       ],
     });
 
@@ -817,13 +841,14 @@ export async function importKoboXLSFormAction(data: {
     }
 
     // Audit Log
+    const mediaDetail = lookupRows.length > 0 ? ` مع ربط ملف وسائط (${lookupRows.length} سجل)` : "";
     await db.execute({
       sql: `INSERT INTO audit_logs (log_id, event_type, actor_name, actor_role, details)
             VALUES (?, 'FORM_KOBO_IMPORTED', ?, 'super_admin', ?)`,
       args: [
         `LOG-KOBO-${Date.now()}`,
         session.full_name,
-        `تم بنجاح استيراد استمارة Kobo (${title}) تضم (${parsed.questions.length}) سؤالاً و(${parsed.stepsCount}) مراحل.`,
+        `تم بنجاح استيراد استمارة Kobo (${title}) تضم (${parsed.questions.length}) سؤالاً و(${parsed.stepsCount}) مراحل${mediaDetail}.`,
       ],
     });
 
@@ -835,6 +860,7 @@ export async function importKoboXLSFormAction(data: {
       title,
       questionsCount: parsed.questions.length,
       stepsCount: parsed.stepsCount,
+      mediaCount: lookupRows.length,
     };
   } catch (err: any) {
     return { success: false, error: err?.message || "حدث خطأ أثناء قراءة ملف الإكسيل" };

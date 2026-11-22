@@ -119,12 +119,80 @@ export default function DynamicFormRenderer({
     return true;
   };
 
-  // Handle answer change
+  // Parse any attached lookup media data
+  const lookupData: any[] = React.useMemo(() => {
+    if (!template.fields_schema) return [];
+    try {
+      const parsed = JSON.parse(template.fields_schema);
+      if (Array.isArray(parsed.lookup_data)) return parsed.lookup_data;
+    } catch {}
+    return [];
+  }, [template.fields_schema]);
+
+  // Handle answer change with smart auto-lookup (pulldata simulation)
   const handleAnswerChange = (qId: number, value: any) => {
-    setAnswers((prev) => ({
-      ...prev,
-      [qId]: value,
-    }));
+    setAnswers((prev) => {
+      const next = { ...prev, [qId]: value };
+
+      // Automatic Employee / Media Lookup
+      if (lookupData.length > 0 && value) {
+        const currentQ = questions.find((q) => q.id === qId);
+        const code = (currentQ?.question_code || "").toLowerCase();
+        const text = (currentQ?.question_text || "").toLowerCase();
+
+        const isIdField =
+          code.includes("emp_id") ||
+          code.includes("emp_no") ||
+          code.includes("user_number") ||
+          code.includes("supervisor_id") ||
+          text.includes("رقم الموظف") ||
+          text.includes("كود الموظف") ||
+          text.includes("رقم المشرف");
+
+        if (isIdField) {
+          const cleanVal = String(value).trim();
+          const found = lookupData.find((item: any) => {
+            const itemCode = String(
+              item.user_number || item.emp_id || item.employee_id || item.id || item["رقم الموظف"] || item["الكود"] || ""
+            ).trim();
+            return itemCode === cleanVal;
+          });
+
+          if (found) {
+            // Auto-fill employee / supervisor name field
+            const nameQ = questions.find(
+              (q) =>
+                q.id !== qId &&
+                ((q.question_code || "").toLowerCase().includes("name") ||
+                  q.question_text.includes("اسم الموظف") ||
+                  q.question_text.includes("اسم المشرف") ||
+                  q.question_text.includes("اسم"))
+            );
+            if (nameQ) {
+              const nameVal =
+                found.full_name || found.name || found.employee_name || found["اسم الموظف"] || found["الاسم"];
+              if (nameVal) next[nameQ.id] = nameVal;
+            }
+
+            // Auto-fill department field if present
+            const deptQ = questions.find(
+              (q) =>
+                q.id !== qId &&
+                ((q.question_code || "").toLowerCase().includes("dept") ||
+                  q.question_text.includes("إدارة") ||
+                  q.question_text.includes("القسم"))
+            );
+            if (deptQ) {
+              const deptVal =
+                found.department_name || found.department || found.dept || found["الإدارة"] || found["القسم"];
+              if (deptVal) next[deptQ.id] = deptVal;
+            }
+          }
+        }
+      }
+
+      return next;
+    });
   };
 
   // Handle Camera / Image Compression to WebP

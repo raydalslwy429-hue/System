@@ -61,6 +61,7 @@ export default function FormsVisibilityManager({
   // Import Modal States
   const [showImportModal, setShowImportModal] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [importMediaFile, setImportMediaFile] = useState<File | null>(null);
   const [importTitle, setImportTitle] = useState("");
   const [importRoles, setImportRoles] = useState("all");
   const [importDept, setImportDept] = useState("all");
@@ -232,6 +233,15 @@ export default function FormsVisibilityManager({
     }
   };
 
+  const readFileAsBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve((r.result as string).split(",")[1]);
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+  };
+
   // Import Kobo XLSForm Handler
   const handleImportSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -244,40 +254,39 @@ export default function FormsVisibilityManager({
     setMessage(null);
 
     try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64Data = (reader.result as string).split(",")[1];
-        const res = await importKoboXLSFormAction({
-          base64Data,
-          filename: importFile.name,
-          customTitle: importTitle.trim() || undefined,
-          allowedRoles: importRoles,
-          departmentCode: importDept,
+      const base64Data = await readFileAsBase64(importFile);
+      let mediaBase64Data: string | undefined = undefined;
+      if (importMediaFile) {
+        mediaBase64Data = await readFileAsBase64(importMediaFile);
+      }
+
+      const res = await importKoboXLSFormAction({
+        base64Data,
+        filename: importFile.name,
+        customTitle: importTitle.trim() || undefined,
+        allowedRoles: importRoles,
+        departmentCode: importDept,
+        mediaBase64Data,
+        mediaFilename: importMediaFile?.name,
+      });
+
+      if (res.success) {
+        const mediaMsg = res.mediaCount ? ` وربط (${res.mediaCount}) سجل موظف وبيانات وسائط!` : "";
+        setMessage({
+          type: "success",
+          text: `🎉 تم بنجاح استيراد استمارة (${res.title}) بعدد (${res.questionsCount}) أسئلة و(${res.stepsCount}) مراحل${mediaMsg}`,
         });
-
-        if (res.success) {
-          setMessage({
-            type: "success",
-            text: `🎉 تم بنجاح استيراد استمارة (${res.title}) بعدد (${res.questionsCount}) أسئلة و(${res.stepsCount}) مراحل!`,
-          });
-          setShowImportModal(false);
-          setImportFile(null);
-          setImportTitle("");
-          fetchTemplates();
-        } else {
-          setMessage({ type: "error", text: res.error || "فشل استيراد الاستمارة" });
-        }
-        setImporting(false);
-      };
-
-      reader.onerror = () => {
-        setMessage({ type: "error", text: "تعذر قراءة ملف الإكسيل" });
-        setImporting(false);
-      };
-
-      reader.readAsDataURL(importFile);
+        setShowImportModal(false);
+        setImportFile(null);
+        setImportMediaFile(null);
+        setImportTitle("");
+        fetchTemplates();
+      } else {
+        setMessage({ type: "error", text: res.error || "فشل استيراد الاستمارة" });
+      }
     } catch (err: any) {
       setMessage({ type: "error", text: err?.message || "حدث خطأ غير متوقع أثناء الرفع" });
+    } finally {
       setImporting(false);
     }
   };
@@ -688,6 +697,32 @@ export default function FormsVisibilityManager({
                   placeholder="مثال: استمارة التفتيش والرقابة على الصالات..."
                   className="w-full h-11 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-amber-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <span>👥 ملف بيانات الموظفين / الوسائط المرجعية (.xlsx أو .csv)</span>
+                    <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
+                      اختياري
+                    </span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal">
+                    لدوال pulldata و choice_filter
+                  </span>
+                </label>
+                <input
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) setImportMediaFile(f);
+                  }}
+                  className="w-full text-xs text-slate-700 file:mr-0 file:ml-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-[#682722] file:text-amber-100 hover:file:bg-[#1B1111] border border-dashed border-slate-300 rounded-2xl p-3 bg-slate-50 cursor-pointer"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  ارفع ملف يحتوي على (رقم الموظف، اسم الموظف، الإدارة، رقم المشرف) لقراءة الأسماء والبيانات آلياً حسب شروط ودوال الكوبو.
+                </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

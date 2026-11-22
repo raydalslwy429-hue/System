@@ -104,7 +104,6 @@ export function parseKoboXLSForm(buffer: Buffer, defaultTitle?: string): ParsedK
     "simserial",
     "subscriberid",
     "audit",
-    "calculate",
   ]);
 
   for (const row of surveyData) {
@@ -148,7 +147,7 @@ export function parseKoboXLSForm(buffer: Buffer, defaultTitle?: string): ParsedK
       String(row.required || "").trim() === "1" ||
       String(row.required || "").trim().toLowerCase() === "yes";
 
-    const helpText = row.hint ? String(row.hint).trim() : undefined;
+    let helpText = row.hint ? String(row.hint).trim() : undefined;
 
     // Detect Field Type & Options
     let fieldType: ParsedKoboQuestion["field_type"] = "text";
@@ -188,6 +187,12 @@ export function parseKoboXLSForm(buffer: Buffer, defaultTitle?: string): ParsedK
       fieldType = isMulti ? "textarea" : "text";
     } else if (lowerType === "note") {
       fieldType = "text";
+    } else if (lowerType === "calculate") {
+      fieldType = "text";
+      const calcStr = String(row.calculation || "").trim();
+      if (!helpText && calcStr) {
+        helpText = `حقل ذكي مستخرج آلياً (${calcStr})`;
+      }
     }
 
     questions.push({

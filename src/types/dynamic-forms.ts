@@ -45,6 +45,7 @@ export interface FormTemplate {
   version: number;
   allowed_roles: string;
   department_code?: string;
+  fields_schema?: string | null;
   status: "active" | "disabled" | "archived";
   created_at?: string;
   updated_at?: string;
